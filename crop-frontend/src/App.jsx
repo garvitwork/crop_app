@@ -131,7 +131,7 @@ function App() {
     formData.append("district", district);
     formData.append("crop", crop);
     try {
-      const res = await fetch("http://127.0.0.1:8000/analyze", { method: "POST", body: formData });
+      const res = await fetch("https://crop-app-jhi8.onrender.com/analyze", { method: "POST", body: formData });
       const data = await res.json();
       setResult(data);
     } catch {
