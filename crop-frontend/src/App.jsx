@@ -163,18 +163,25 @@ function App() {
       <div style={S.section} ref={insightsRef}>
         <div style={S.tag}>FIELD INTELLIGENCE</div>
         <div style={S.title}>Disease activity across India</div>
-        <div style={{ maxWidth: 500 }}>
-          {insights.map((r) => (
-            <div key={r.region} style={{ marginBottom: 18 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
-                <span><b>{r.region}</b> <span style={{ color: "#888" }}>· {r.risk}</span></span>
-                <span>{r.pct}%</span>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <iframe
+            src="https://garvitwork.github.io/crop_app/hotspot_map.html"
+            title="Hotspot Map"
+            style={{ width: "100%", height: 400, border: `1px solid ${C.border}`, borderRadius: 12 }}
+          />
+          <div>
+            {insights.map((r) => (
+              <div key={r.region} style={{ marginBottom: 18 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14 }}>
+                  <span><b>{r.region}</b> <span style={{ color: "#888" }}>· {r.risk}</span></span>
+                  <span>{r.pct}%</span>
+                </div>
+                <div style={{ background: C.border, borderRadius: 6, height: 6, marginTop: 4 }}>
+                  <div style={{ background: r.pct > 60 ? "#f87171" : r.pct > 40 ? "#facc15" : C.green, height: 6, borderRadius: 6, width: `${r.pct}%`, transition: "width .6s" }} />
+                </div>
               </div>
-              <div style={{ background: C.border, borderRadius: 6, height: 6, marginTop: 4 }}>
-                <div style={{ background: r.pct > 60 ? "#f87171" : r.pct > 40 ? "#facc15" : C.green, height: 6, borderRadius: 6, width: `${r.pct}%`, transition: "width .6s" }} />
-              </div>
-            </div>
-          ))}
+            ))}
+          </div>
         </div>
       </div>
 
