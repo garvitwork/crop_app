@@ -2,6 +2,8 @@ tensorflow
 numpy
 requests
 folium
-google-generativeai
+genai
 fastapi
 uvicorn
+dotenv
+python-multipart
