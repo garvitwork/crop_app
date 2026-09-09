@@ -133,9 +133,14 @@ function App() {
     try {
       const res = await fetch("https://crop-app-jhi8.onrender.com/analyze", { method: "POST", body: formData });
       const data = await res.json();
+      if (!res.ok || data.error) {
+        showToast(data.error || `Server error (${res.status}). Try again.`);
+        setLoading(false);
+        return;
+      }
       setResult(data);
     } catch {
-      showToast("Backend not reachable — run uvicorn app:app --reload");
+      showToast("Backend not reachable — check server status");
     }
     setLoading(false);
   };
