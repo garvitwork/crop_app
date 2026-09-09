@@ -3,6 +3,7 @@ numpy
 requests
 folium
 genai
+google-genai
 fastapi
 uvicorn
 dotenv
