@@ -6,8 +6,8 @@ pest/disease risk score based on temperature + humidity + rainfall.
 """
 
 import requests
+import time
 
-# Sample Maharashtra district coordinates
 DISTRICTS = {
     "Pune": (18.5204, 73.8567),
     "Nashik": (19.9975, 73.7898),
@@ -18,8 +18,17 @@ DISTRICTS = {
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
 
+_cache = {}       # district -> (timestamp, weather_json)
+_CACHE_TTL = 600   # seconds — real data, just avoids hammering the API
+
 
 def get_weather(district="Pune"):
+    now = time.time()
+    if district in _cache:
+        ts, data = _cache[district]
+        if now - ts < _CACHE_TTL:
+            return data
+
     lat, lon = DISTRICTS.get(district, DISTRICTS["Pune"])
     params = {
         "latitude": lat,
@@ -28,9 +37,27 @@ def get_weather(district="Pune"):
         "daily": "precipitation_sum,temperature_2m_max,temperature_2m_min",
         "timezone": "Asia/Kolkata",
     }
-    r = requests.get(BASE_URL, params=params, timeout=10)
-    r.raise_for_status()
-    return r.json()
+
+    last_err = None
+    for attempt in range(4):
+        try:
+            r = requests.get(
+                BASE_URL, params=params, timeout=10,
+                headers={"User-Agent": "CropGuard/1.0"},
+            )
+            if r.status_code == 429:
+                last_err = requests.exceptions.HTTPError("429 rate limited")
+                time.sleep(2 ** attempt)  # 1s, 2s, 4s, 8s
+                continue
+            r.raise_for_status()
+            data = r.json()
+            _cache[district] = (now, data)
+            return data
+        except requests.exceptions.RequestException as e:
+            last_err = e
+            time.sleep(2 ** attempt)
+
+    raise last_err
 
 
 def compute_risk(weather_json):

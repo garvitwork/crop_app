@@ -1,5 +1,6 @@
 from fastapi import FastAPI, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import shutil
 from importlib import import_module
 
@@ -11,18 +12,28 @@ sensor_mod = import_module("5_pest_traps_sensor")
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+
 @app.post("/analyze")
 async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Form("Tomato")):
     path = f"temp_{file.filename}"
-    with open(path, "wb") as f:
-        shutil.copyfileobj(file.file, f)
+    try:
+        with open(path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
 
-    prediction = img_mod.predict(path)
-    weather = weather_mod.compute_risk(weather_mod.get_weather(district))
-    advisory = expert_mod.get_expert_advisory(
-        crop=crop, predicted_disease=prediction["class"],
-        confidence=prediction["confidence"], weather_risk=weather["pest_disease_risk"],
-        district=district)
-    sensor = sensor_mod.get_sensor_data()
+        prediction = img_mod.predict(path)
 
-    return {"prediction": prediction, "weather": weather, "advisory": advisory, "sensor": sensor}
+        try:
+            weather = weather_mod.compute_risk(weather_mod.get_weather(district))
+        except Exception as e:
+            return JSONResponse(status_code=502, content={"error": f"Weather service unavailable: {e}"})
+
+        advisory = expert_mod.get_expert_advisory(
+            crop=crop, predicted_disease=prediction["class"],
+            confidence=prediction["confidence"], weather_risk=weather["pest_disease_risk"],
+            district=district)
+        sensor = sensor_mod.get_sensor_data()
+
+        return {"prediction": prediction, "weather": weather, "advisory": advisory, "sensor": sensor}
+
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"error": str(e)})
