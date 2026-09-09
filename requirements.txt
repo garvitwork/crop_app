@@ -1,0 +1,7 @@
+tensorflow
+numpy
+requests
+folium
+google-generativeai
+fastapi
+uvicorn

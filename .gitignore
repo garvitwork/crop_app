@@ -1,0 +1,10 @@
+# Python environment and cache
+__pycache__/
+crop_env/
+
+# Frontend dependencies and builds
+crop-frontend/node_modules/
+crop-frontend/dist/
+
+# Sensitive data
+.env
