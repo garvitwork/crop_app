@@ -30,13 +30,7 @@ const steps = [
   { n: "4", t: "Act locally", d: "A hotspot map and sensor readings help track spread and plan the response." },
 ];
 
-const insights = [
-  { region: "Uttar Pradesh", risk: "Leaf disease", pct: 74 },
-  { region: "West Bengal", risk: "Rice blast", pct: 68 },
-  { region: "Assam", risk: "Pest pressure", pct: 61 },
-  { region: "Maharashtra", risk: "Fungal risk", pct: 47 },
-  { region: "Karnataka", risk: "Water stress", pct: 29 },
-];
+// insights now fetched live from /hotspots
 
 function cleanAdvisory(text) {
   return text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/^-{3,}$/gm, "");
@@ -108,11 +102,19 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
+  const [insights, setInsights] = useState([]);
 
   const fileInputRef = useRef(null);
   const scanRef = useRef(null);
   const howRef = useRef(null);
   const insightsRef = useRef(null);
+
+  useEffect(() => {
+    fetch("http://127.0.0.1:8000/hotspots")
+      .then((r) => r.json())
+      .then(setInsights)
+      .catch(() => setInsights([]));
+  }, []);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
@@ -131,7 +133,7 @@ function App() {
     formData.append("district", district);
     formData.append("crop", crop);
     try {
-      const res = await fetch("https://crop-app-jhi8.onrender.com/analyze", { method: "POST", body: formData });
+      const res = await fetch("http://127.0.0.1:8000/analyze", { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok || data.error) {
         showToast(data.error || `Server error (${res.status}). Try again.`);
@@ -339,18 +341,30 @@ function App() {
             title="Hotspot Map"
             style={{ width: "100%", height: 420, border: `1px solid ${C.line}`, borderRadius: 8, boxShadow: S.glowBox.boxShadow }}
           />
-          <div style={{ ...S.glowBox, padding: 24 }}>
-            {insights.map((r, i) => (
-              <Reveal key={r.region} delay={i * 0.08} style={{ marginBottom: 20 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14.5, marginBottom: 6 }}>
-                  <span>{r.region} <span style={{ color: C.sand }}>— {r.risk}</span></span>
-                  <span style={{ color: C.sand }}>{r.pct}%</span>
-                </div>
-                <div style={{ background: C.line, borderRadius: 3, height: 5 }}>
-                  <div style={{ background: r.pct > 60 ? C.rust : r.pct > 40 ? C.gold : C.cane, height: 5, borderRadius: 3, width: `${r.pct}%`, transition: "width 1s ease-out", boxShadow: `0 0 6px ${C.gold}66` }} />
-                </div>
-              </Reveal>
-            ))}
+          <div style={{ ...S.glowBox, padding: 20 }}>
+            {insights.length === 0 && <div style={{ color: C.sand, fontSize: 14, padding: 8 }}>Loading top hotspots…</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              {insights.map((r, i) => {
+                const col = r.pct > 70 ? C.rust : r.pct > 40 ? C.gold : C.cane;
+                return (
+                  <Reveal key={r.region} delay={i * 0.06}>
+                    <div className="threat-card" style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, padding: "14px 16px", position: "relative", overflow: "hidden" }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ width: 20, height: 20, borderRadius: "50%", background: `${col}22`, border: `1px solid ${col}`, color: col, fontSize: 11, fontWeight: 700, display: "flex", alignItems: "center", justifyContent: "center" }}>{i + 1}</span>
+                          <span style={{ fontWeight: 600, fontSize: 14.5 }}>{r.region}</span>
+                        </div>
+                        <span style={{ color: col, fontWeight: 700, fontSize: 13, textShadow: `0 0 8px ${col}66` }}>{r.pct}%</span>
+                      </div>
+                      <div style={{ color: C.sand, fontSize: 12.5, marginBottom: 8 }}>{r.risk}</div>
+                      <div style={{ background: C.line, borderRadius: 3, height: 5 }}>
+                        <div style={{ background: col, height: 5, borderRadius: 3, width: `${r.pct}%`, transition: "width 1s ease-out", boxShadow: `0 0 6px ${col}77` }} />
+                      </div>
+                    </div>
+                  </Reveal>
+                );
+              })}
+            </div>
           </div>
         </div>
        </div>

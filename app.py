@@ -6,11 +6,17 @@ from importlib import import_module
 
 img_mod = import_module("1_image_classification")
 weather_mod = import_module("2_weather_api")
+geo_mod = import_module("3_geo_hotspot")
 expert_mod = import_module("4_expert_validation")
 sensor_mod = import_module("5_pest_traps_sensor")
 
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+
+@app.get("/hotspots")
+async def hotspots():
+    return geo_mod.get_top_hotspots(8)
 
 
 @app.post("/analyze")
