@@ -61,11 +61,11 @@ function parseAdvisory(raw) {
 
 const iconFor = (title) => {
   const t = title.toLowerCase();
-  if (t.includes("valid")) return "";
-  if (t.includes("management") || t.includes("recommend")) return "";
-  if (t.includes("kvk") || t.includes("reference") || t.includes("lab")) return "";
-  if (t.includes("marathi") || t.includes("सारांश")) return "";
-  return "";
+  if (t.includes("valid")) return "🔍";
+  if (t.includes("management") || t.includes("recommend")) return "🛠️";
+  if (t.includes("kvk") || t.includes("reference") || t.includes("lab")) return "🏢";
+  if (t.includes("marathi") || t.includes("सारांश")) return "🗣️";
+  return "📋";
 };
 
 const riskStyle = (risk, C) => {
@@ -117,6 +117,17 @@ function App() {
   }, []);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
+  const [waking, setWaking] = useState(false);
+  const wakeApi = async () => {
+    setWaking(true);
+    try {
+      await fetch("https://crop-app-jhi8.onrender.com/health");
+      showToast("Server is awake ✅");
+    } catch {
+      showToast("Waking… try again in a few seconds");
+    }
+    setWaking(false);
+  };
 
   const setImage = (f) => {
     if (!f) return;
@@ -233,7 +244,10 @@ function App() {
           <span className="nav-link" style={S.navLink} onClick={() => howRef.current.scrollIntoView({ behavior: "smooth" })}>How it works</span>
           <span className="nav-link" style={S.navLink} onClick={() => insightsRef.current.scrollIntoView({ behavior: "smooth" })}>Insights</span>
         </div>
-        <button className="btn-primary" style={S.primaryBtn} onClick={() => scanRef.current.scrollIntoView({ behavior: "smooth" })}>Scan a crop</button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button className="btn-ghost" style={S.ghostBtn} onClick={wakeApi} disabled={waking}>{waking ? "Waking…" : "Wake API"}</button>
+          <button className="btn-primary" style={S.primaryBtn} onClick={() => scanRef.current.scrollIntoView({ behavior: "smooth" })}>Scan a crop</button>
+        </div>
       </div>
 
       {/* HERO */}

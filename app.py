@@ -14,6 +14,11 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
+@app.get("/health")
+async def health():
+    return {"status": "awake"}
+
+
 @app.get("/hotspots")
 async def hotspots():
     return geo_mod.get_top_hotspots(8)
