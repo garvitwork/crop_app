@@ -37,17 +37,19 @@ function cleanAdvisory(text) {
 }
 
 function parseAdvisory(raw) {
-  const text = cleanAdvisory(raw).trim();
+  let text = cleanAdvisory(raw).trim();
+  // break inline "1. Title:" / "2. Title:" style sub-headers onto their own lines
+  text = text.replace(/(^|\s)(\d{1,2}\.\s+[A-Za-zऀ-ॿ][A-Za-z0-9ऀ-ॿ /'&-]{2,40}:)/g, "\n$2");
   const lines = text.split("\n");
   const sections = [];
   let current = null;
-  const headerRe = /^([A-Za-zऀ-ॿ][A-Za-z0-9ऀ-ॿ '()]{2,50}):\s*$/;
-  for (const line of lines) {
-    const t = line.trim();
+  const headerRe = /^(?:\d{1,2}\.\s*)?([A-Za-zऀ-ॿ][A-Za-z0-9ऀ-ॿ '()/&-]{2,50}):\s*(.*)$/;
+  for (const rawLine of lines) {
+    const t = rawLine.trim();
     if (!t) continue;
     const m = t.match(headerRe);
-    if (m) {
-      current = { title: m[1].trim(), lines: [] };
+    if (m && m[1].split(" ").length <= 6) {
+      current = { title: m[1].trim(), lines: m[2] ? [m[2].trim()] : [] };
       sections.push(current);
     } else if (current) {
       current.lines.push(t);
