@@ -33,6 +33,8 @@ def _try_gemini(prompt):
 
 
 def _try_groq(prompt):
+    if not GROQ_API_KEY:
+        raise Exception("GROQ_API_KEY is not set in environment")
     r = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
