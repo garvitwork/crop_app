@@ -290,6 +290,53 @@ function App() {
         </div>
       </div>
 
+      {view === "dashboard" ? (
+        <div style={S.section}>
+          <div style={S.kicker}>For agriculture officials</div>
+          <div style={S.h2}>Regional risk dashboard</div>
+          <div style={S.body}>Live weather-based risk across all tracked districts, plus current top disease hotspots — for planning extension visits and preventive interventions.</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 40 }}>
+            {districtsData.length === 0 && <div style={{ color: C.sand }}>Loading district data…</div>}
+            {districtsData.map((d, i) => {
+              const risk = riskStyle(d.pest_disease_risk, C);
+              return (
+                <Reveal key={d.district} delay={i * 0.05}>
+                  <div style={{ ...S.glowBox, padding: 18, borderLeft: `3px solid ${risk.color}` }}>
+                    <div style={{ fontFamily: serif, fontSize: 19, marginBottom: 6 }}>{d.district}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, color: risk.color, fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>
+                      <span>{risk.icon}</span>{d.pest_disease_risk} risk
+                    </div>
+                    <div style={{ color: C.sand, fontSize: 13 }}>
+                      {d.temperature_C != null ? `🌡️ ${d.temperature_C}°C · 💧 ${d.humidity_percent}%` : "Weather unavailable"}
+                    </div>
+                  </div>
+                </Reveal>
+              );
+            })}
+          </div>
+
+          <div style={S.kicker}>Current top hotspots</div>
+          <div style={{ ...S.glowBox, padding: 20 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+              {insights.map((r, i) => {
+                const col = r.pct > 70 ? C.rust : r.pct > 40 ? C.gold : C.cane;
+                return (
+                  <div key={r.region} style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{r.region}</span>
+                      <span style={{ color: col, fontWeight: 700, fontSize: 13 }}>{r.pct}%</span>
+                    </div>
+                    <div style={{ color: C.sand, fontSize: 12.5 }}>{r.risk}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      ) : (
+      <>
+
       {/* HERO */}
       <Reveal className="hero-grid" style={{ ...S.section, display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 60, alignItems: "center", paddingTop: 100, paddingBottom: 100 }}>
         <div>
@@ -559,6 +606,9 @@ function App() {
         </div>
        </div>
       </Reveal>
+
+      </>
+      )}
 
       <div style={{ borderTop: `1px solid ${C.line}`, padding: "28px 4vw", textAlign: "center", color: C.sand, fontSize: 13 }}>
         CropGuard — a crop health prototype for Maharashtra
