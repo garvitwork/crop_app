@@ -83,17 +83,21 @@ def compute_risk(weather_json):
     humidity = current["relative_humidity_2m"]
     rain = current["precipitation"]
 
+    # Tighter, more selective bands — old thresholds (20-30C, humidity>=70,
+    # rain>0) were so wide that almost any real reading hit 2/3 and scored
+    # HIGH permanently. Now each factor needs a genuinely elevated reading,
+    # and HIGH requires all three at once.
     score = 0
-    if 20 <= temp <= 30:
+    if 24 <= temp <= 32:
         score += 1
-    if humidity >= 70:
+    if humidity >= 80:
         score += 1
-    if rain > 0:
+    if rain > 2:
         score += 1
 
-    if score >= 2:
+    if score >= 3:
         risk = "HIGH"
-    elif score == 1:
+    elif score == 2:
         risk = "MODERATE"
     else:
         risk = "LOW"
