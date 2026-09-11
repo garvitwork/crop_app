@@ -2,6 +2,7 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import shutil
+from datetime import datetime
 from importlib import import_module
 from PIL import Image, UnidentifiedImageError
 
@@ -15,6 +16,9 @@ app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 MIN_CONFIDENCE = 0.35  # below this, treat the image as not a valid crop/leaf photo
+
+SCAN_LOG = []          # in-memory log of real farmer submissions, most recent first
+MAX_LOG = 50
 
 
 @app.get("/health")
@@ -37,6 +41,11 @@ async def districts_weather():
 @app.get("/hotspots")
 async def hotspots():
     return geo_mod.get_top_hotspots(8)
+
+
+@app.get("/recent-scans")
+async def recent_scans():
+    return SCAN_LOG
 
 
 @app.post("/analyze")
@@ -72,6 +81,17 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
             confidence=prediction["confidence"], weather_risk=weather["pest_disease_risk"],
             district=district)
         sensor = sensor_mod.get_sensor_data()
+
+        # log this real submission for the officials dashboard
+        SCAN_LOG.insert(0, {
+            "crop": crop,
+            "district": district,
+            "predicted_class": prediction["class"],
+            "confidence": prediction["confidence"],
+            "risk": weather["pest_disease_risk"],
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+        del SCAN_LOG[MAX_LOG:]
 
         return {"prediction": prediction, "weather": weather, "advisory": advisory, "sensor": sensor}
 

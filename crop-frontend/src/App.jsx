@@ -107,6 +107,7 @@ function App() {
   const [insights, setInsights] = useState([]);
   const [view, setView] = useState("farmer");
   const [districtsData, setDistrictsData] = useState([]);
+  const [recentScans, setRecentScans] = useState([]);
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -127,6 +128,10 @@ function App() {
       .then((r) => r.json())
       .then(setDistrictsData)
       .catch(() => setDistrictsData([]));
+    fetch("https://crop-app-jhi8.onrender.com/recent-scans")
+      .then((r) => r.json())
+      .then(setRecentScans)
+      .catch(() => setRecentScans([]));
   }, [view]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
@@ -332,6 +337,31 @@ function App() {
                 );
               })}
             </div>
+          </div>
+
+          <div style={{ ...S.kicker, marginTop: 40 }}>Recent field submissions</div>
+          <div style={S.body}>Live feed of actual farmer uploads processed by the system — crop, AI diagnosis, confidence, and local risk at the moment of submission.</div>
+          <div style={{ ...S.glowBox, padding: 0, overflow: "hidden" }}>
+            {recentScans.length === 0 && <div style={{ color: C.sand, padding: 20 }}>No submissions yet — results appear here as farmers scan crops.</div>}
+            {recentScans.map((s, i) => {
+              const risk = riskStyle(s.risk, C);
+              const conf = s.confidence * 100;
+              const cCol = confColor(conf, C);
+              const t = new Date(s.timestamp);
+              return (
+                <div key={i} style={{
+                  display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 12, alignItems: "center",
+                  padding: "12px 18px", borderBottom: i < recentScans.length - 1 ? `1px solid ${C.line}` : "none",
+                  animation: `fadeInUp .4s ease-out ${i * 0.03}s both`,
+                }}>
+                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.crop} <span style={{ color: C.sand }}>· {s.district}</span></div>
+                  <div style={{ fontSize: 13 }}>{s.predicted_class.replace(/_/g, " ")}</div>
+                  <div style={{ color: cCol, fontWeight: 700, fontSize: 13 }}>{conf.toFixed(0)}% conf.</div>
+                  <div style={{ color: risk.color, fontSize: 13 }}>{risk.icon} {s.risk}</div>
+                  <div style={{ color: C.sand, fontSize: 11.5, whiteSpace: "nowrap" }}>{t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
+                </div>
+              );
+            })}
           </div>
         </div>
       ) : (
