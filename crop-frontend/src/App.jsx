@@ -149,30 +149,35 @@ function Donut({ segments, size = 108, thickness = 14 }) {
   const circ = 2 * Math.PI * r;
   let offset = 0;
   return (
-    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={C.line} strokeWidth={thickness} />
-      {segments.map((s, i) => {
-        const frac = s.value / total;
-        const dash = frac * circ;
-        const circle = (
-          <circle
-            key={i}
-            cx={size / 2}
-            cy={size / 2}
-            r={r}
-            fill="none"
-            stroke={s.color}
-            strokeWidth={thickness}
-            strokeDasharray={`${dash} ${circ - dash}`}
-            strokeDashoffset={-offset}
-            strokeLinecap="butt"
-            style={{ transition: "stroke-dasharray 1s ease-out", filter: s.value > 0 ? `drop-shadow(0 0 6px ${s.color})` : "none" }}
-          />
-        );
-        offset += dash;
-        return circle;
-      })}
-    </svg>
+    <div style={{ position: "relative", width: size, height: size }}>
+      <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={C.line} strokeWidth={thickness} />
+        {segments.map((s, i) => {
+          const frac = s.value / total;
+          const dash = frac * circ;
+          const circle = (
+            <circle
+              key={i}
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={thickness}
+              strokeDasharray={`${dash} ${circ - dash}`}
+              strokeDashoffset={-offset}
+              strokeLinecap="butt"
+              style={{ transition: "stroke-dasharray 1s ease-out", filter: s.value > 0 ? `drop-shadow(0 0 6px ${s.color})` : "none" }}
+            />
+          );
+          offset += dash;
+          return circle;
+        })}
+      </svg>
+      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 700, color: C.ivory }}>
+        {total}
+      </div>
+    </div>
   );
 }
 
@@ -191,23 +196,23 @@ function HBar({ label, value, max, color, suffix = "" }) {
   );
 }
 
-function Sparkline({ points, color, width = 220, height = 52 }) {
+function Sparkline({ points, color, width = 190, height = 52 }) {
   if (!points.length) return <div style={{ color: C.sand, fontSize: 12.5 }}>Not enough data yet</div>;
-  const max = Math.max(...points, 1);
-  const min = Math.min(...points, 0);
+  const max = Math.max(...points);
+  const min = Math.min(...points);
   const range = max - min || 1;
   const stepX = points.length > 1 ? width / (points.length - 1) : width;
   const coords = points.map((p, i) => {
     const x = i * stepX;
-    const y = height - ((p - min) / range) * (height - 8) - 4;
+    const y = 8 + (1 - (p - min) / range) * (height - 16);
     return [x, y];
   });
   const path = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const last = coords[coords.length - 1];
   return (
-    <svg width={width + 34} height={height}>
-      <text x={width + 4} y={8} fontSize="10" fill={C.sand}>{max.toFixed(0)}%</text>
-      <text x={width + 4} y={height - 2} fontSize="10" fill={C.sand}>{min.toFixed(0)}%</text>
+    <svg width={width + 40} height={height}>
+      <text x={width + 8} y={12} fontSize="10" fill={C.sand}>{max.toFixed(0)}%</text>
+      <text x={width + 8} y={height - 6} fontSize="10" fill={C.sand}>{min.toFixed(0)}%</text>
       <path d={path} fill="none" stroke={color} strokeWidth={2} style={{ filter: `drop-shadow(0 0 4px ${color}88)` }} />
       <circle cx={last[0]} cy={last[1]} r={3.5} fill={color} />
     </svg>
