@@ -1,17 +1,16 @@
 import os
+import requests
 from google import genai
 from dotenv import load_dotenv
 
-# Load variables from .env file
 load_dotenv()
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-
-
-def get_expert_advisory(crop, predicted_disease, confidence, weather_risk, district="Pune"):
-    prompt = f"""
+PROMPT_TEMPLATE = """
 You are an agricultural extension expert helping farmers in Maharashtra, India.
 
 Crop: {crop}
@@ -26,10 +25,41 @@ District: {district}
 Respond in English, then give a short summary in Marathi.
 Keep the whole answer under 150 words.
 """
-    response = client.models.generate_content(
-        model="gemini-3.6-flash", contents=prompt
-    )
+
+
+def _try_gemini(prompt):
+    response = client.models.generate_content(model="gemini-3.6-flash", contents=prompt)
     return response.text
+
+
+def _try_groq(prompt):
+    r = requests.post(
+        "https://api.groq.com/openai/v1/chat/completions",
+        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
+        json={
+            "model": "llama-3.3-70b-versatile",
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.4,
+        },
+        timeout=20,
+    )
+    r.raise_for_status()
+    return r.json()["choices"][0]["message"]["content"]
+
+
+def get_expert_advisory(crop, predicted_disease, confidence, weather_risk, district="Pune"):
+    prompt = PROMPT_TEMPLATE.format(
+        crop=crop, predicted_disease=predicted_disease,
+        confidence=confidence, weather_risk=weather_risk, district=district,
+    )
+    try:
+        return _try_gemini(prompt)
+    except Exception as e:
+        print(f"Gemini failed ({e}), falling back to Groq...")
+        try:
+            return _try_groq(prompt)
+        except Exception as e2:
+            raise Exception(f"Both Gemini and Groq failed. Gemini: {e} | Groq: {e2}")
 
 
 if __name__ == "__main__":
