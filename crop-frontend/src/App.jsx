@@ -77,7 +77,7 @@ const riskStyle = (risk, C) => {
 
 const confColor = (pct, C) => (pct < 45 ? C.rust : pct < 70 ? C.gold : C.cane);
 
-function Reveal({ children, delay = 0, style }) {
+function Reveal({ children, delay = 0, style, className }) {
   const ref = useRef(null);
   const [vis, setVis] = useState(false);
   useEffect(() => {
@@ -86,7 +86,7 @@ function Reveal({ children, delay = 0, style }) {
     return () => obs.disconnect();
   }, []);
   return (
-    <div ref={ref} style={{ opacity: vis ? 1 : 0, transform: vis ? "translateY(0)" : "translateY(26px)", transition: `opacity .6s ease-out ${delay}s, transform .6s ease-out ${delay}s`, ...style }}>
+    <div ref={ref} className={className} style={{ opacity: vis ? 1 : 0, transform: vis ? "translateY(0)" : "translateY(26px)", transition: `opacity .6s ease-out ${delay}s, transform .6s ease-out ${delay}s`, ...style }}>
       {children}
     </div>
   );
@@ -168,9 +168,9 @@ function App() {
     navLink: { color: C.sand, cursor: "pointer", fontSize: 14.5, transition: "color .15s" },
     primaryBtn: { background: C.gold, color: C.bg, border: "none", padding: "11px 22px", borderRadius: 4, fontWeight: 600, fontSize: 14.5, cursor: "pointer", boxShadow: glow(C.gold) },
     ghostBtn: { background: "transparent", border: `1px solid ${C.line}`, color: C.ivory, padding: "11px 22px", borderRadius: 4, cursor: "pointer", fontSize: 14.5 },
-    section: { padding: "72px 4vw", width: "100%", maxWidth: "100%", margin: "0 auto", boxSizing: "border-box" },
+    section: { padding: "clamp(40px, 8vw, 72px) 4vw", width: "100%", maxWidth: "100%", margin: "0 auto", boxSizing: "border-box" },
     kicker: { color: C.cane, fontSize: 14, marginBottom: 10, fontFamily: serif, fontStyle: "italic" },
-    h2: { fontFamily: serif, fontSize: 34, fontWeight: 500, marginBottom: 14, maxWidth: 640 },
+    h2: { fontFamily: serif, fontSize: "clamp(24px, 4vw, 34px)", fontWeight: 500, marginBottom: 14, maxWidth: 640 },
     body: { color: C.sand, maxWidth: 600, marginBottom: 36, fontSize: 15.5 },
     glowBox: { background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: `0 0 0 1px ${C.line}, 0 8px 30px -10px ${C.gold}33` },
   };
@@ -210,6 +210,12 @@ function App() {
         @keyframes popIn { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: scale(1); } }
         @keyframes chipPulse { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 10px currentColor; } }
         @keyframes ringSpin { to { transform: rotate(360deg); } }
+        @media (max-width: 760px) {
+          .hero-grid, .insights-wrap, .scan-grid { grid-template-columns: 1fr !important; }
+          .insights-grid { grid-template-columns: 1fr !important; }
+          .nav-links { display: none !important; }
+          .map-frame { height: 260px !important; }
+        }
       `}</style>
 
       <div className="blob" style={{ width: 480, height: 480, top: -100, left: -100, background: C.gold, animation: "drift1 14s ease-in-out infinite" }} />
@@ -237,9 +243,9 @@ function App() {
       )}
 
       {/* NAV */}
-      <div style={S.nav}>
+      <div style={{ ...S.nav, flexWrap: "wrap", gap: 12 }}>
         <div style={{ ...S.logo, animation: "floatIcon 3s ease-in-out infinite" }}>CropGuard</div>
-        <div style={{ display: "flex", gap: 34 }}>
+        <div className="nav-links" style={{ display: "flex", gap: 34 }}>
           <span className="nav-link" style={S.navLink} onClick={() => scanRef.current.scrollIntoView({ behavior: "smooth" })}>Scan</span>
           <span className="nav-link" style={S.navLink} onClick={() => howRef.current.scrollIntoView({ behavior: "smooth" })}>How it works</span>
           <span className="nav-link" style={S.navLink} onClick={() => insightsRef.current.scrollIntoView({ behavior: "smooth" })}>Insights</span>
@@ -251,10 +257,10 @@ function App() {
       </div>
 
       {/* HERO */}
-      <Reveal style={{ ...S.section, display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 60, alignItems: "center", paddingTop: 100, paddingBottom: 100 }}>
+      <Reveal className="hero-grid" style={{ ...S.section, display: "grid", gridTemplateColumns: "1.1fr 0.9fr", gap: 60, alignItems: "center", paddingTop: 100, paddingBottom: 100 }}>
         <div>
           <div style={S.kicker}>Smart Advisory Council for Agriculture, Maharashtra</div>
-          <div style={{ fontFamily: serif, fontSize: 56, lineHeight: 1.08, fontWeight: 500, marginBottom: 22 }}>
+          <div style={{ fontFamily: serif, fontSize: "clamp(32px, 6vw, 56px)", lineHeight: 1.08, fontWeight: 500, marginBottom: 22 }}>
             A second opinion for every field, before the damage spreads
           </div>
           <div style={{ color: C.sand, fontSize: 17, maxWidth: 460, marginBottom: 30 }}>
@@ -349,15 +355,16 @@ function App() {
         <div style={S.kicker}>Field intelligence</div>
         <div style={S.h2}>Disease activity, reported and mapped</div>
         <div style={S.body}>Farmer-submitted reports plotted across Maharashtra, alongside a national comparison. Demo data for this prototype.</div>
-        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 28 }}>
+        <div className="insights-wrap" style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 28 }}>
           <iframe
             src="https://garvitwork.github.io/crop_app/hotspot_map.html"
             title="Hotspot Map"
+            className="map-frame"
             style={{ width: "100%", height: 420, border: `1px solid ${C.line}`, borderRadius: 8, boxShadow: S.glowBox.boxShadow }}
           />
           <div style={{ ...S.glowBox, padding: 20 }}>
             {insights.length === 0 && <div style={{ color: C.sand, fontSize: 14, padding: 8 }}>Loading top hotspots…</div>}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div className="insights-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
               {insights.map((r, i) => {
                 const col = r.pct > 70 ? C.rust : r.pct > 40 ? C.gold : C.cane;
                 return (
@@ -391,7 +398,7 @@ function App() {
         <div style={S.h2}>Upload a crop photo</div>
         <div style={S.body}>Upload a real leaf or fruit image. The trained model, weather engine and AI advisory run together for one combined result.</div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
+        <div className="scan-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 24 }}>
           <div
             onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
             onDragLeave={() => setDragOver(false)}
