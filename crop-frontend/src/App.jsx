@@ -166,7 +166,7 @@ function Donut({ segments, size = 108, thickness = 14 }) {
             strokeDasharray={`${dash} ${circ - dash}`}
             strokeDashoffset={-offset}
             strokeLinecap="butt"
-            style={{ transition: "stroke-dasharray 1s ease-out" }}
+            style={{ transition: "stroke-dasharray 1s ease-out", filter: s.value > 0 ? `drop-shadow(0 0 6px ${s.color})` : "none" }}
           />
         );
         offset += dash;
@@ -205,7 +205,9 @@ function Sparkline({ points, color, width = 220, height = 52 }) {
   const path = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
   const last = coords[coords.length - 1];
   return (
-    <svg width={width} height={height}>
+    <svg width={width + 34} height={height}>
+      <text x={width + 4} y={8} fontSize="10" fill={C.sand}>{max.toFixed(0)}%</text>
+      <text x={width + 4} y={height - 2} fontSize="10" fill={C.sand}>{min.toFixed(0)}%</text>
       <path d={path} fill="none" stroke={color} strokeWidth={2} style={{ filter: `drop-shadow(0 0 4px ${color}88)` }} />
       <circle cx={last[0]} cy={last[1]} r={3.5} fill={color} />
     </svg>
