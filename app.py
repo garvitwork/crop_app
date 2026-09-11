@@ -22,6 +22,18 @@ async def health():
     return {"status": "awake"}
 
 
+@app.get("/districts-weather")
+async def districts_weather():
+    out = []
+    for d in weather_mod.DISTRICTS.keys():
+        try:
+            w = weather_mod.compute_risk(weather_mod.get_weather(d))
+            out.append({"district": d, **w})
+        except Exception:
+            out.append({"district": d, "pest_disease_risk": "N/A", "temperature_C": None, "humidity_percent": None})
+    return out
+
+
 @app.get("/hotspots")
 async def hotspots():
     return geo_mod.get_top_hotspots(8)

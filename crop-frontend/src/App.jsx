@@ -105,6 +105,8 @@ function App() {
   const [modal, setModal] = useState(null);
   const [toast, setToast] = useState(null);
   const [insights, setInsights] = useState([]);
+  const [view, setView] = useState("farmer");
+  const [districtsData, setDistrictsData] = useState([]);
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -118,6 +120,14 @@ function App() {
       .then(setInsights)
       .catch(() => setInsights([]));
   }, []);
+
+  useEffect(() => {
+    if (view !== "dashboard") return;
+    fetch("https://crop-app-jhi8.onrender.com/districts-weather")
+      .then((r) => r.json())
+      .then(setDistrictsData)
+      .catch(() => setDistrictsData([]));
+  }, [view]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const [waking, setWaking] = useState(false);
@@ -272,6 +282,7 @@ function App() {
           <span className="nav-link" style={S.navLink} onClick={() => scanRef.current.scrollIntoView({ behavior: "smooth" })}>Scan</span>
           <span className="nav-link" style={S.navLink} onClick={() => howRef.current.scrollIntoView({ behavior: "smooth" })}>How it works</span>
           <span className="nav-link" style={S.navLink} onClick={() => insightsRef.current.scrollIntoView({ behavior: "smooth" })}>Insights</span>
+          <span className="nav-link" style={S.navLink} onClick={() => setView(view === "dashboard" ? "farmer" : "dashboard")}>{view === "dashboard" ? "Farmer view" : "Officials Dashboard"}</span>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn-ghost" style={S.ghostBtn} onClick={wakeApi} disabled={waking}>{waking ? "Waking…" : "Wake API"}</button>
