@@ -134,8 +134,28 @@ function App() {
 
   const setImage = (f) => {
     if (!f) return;
-    setFile(f);
-    setPreview(URL.createObjectURL(f));
+    const img = new Image();
+    const url = URL.createObjectURL(f);
+    img.onload = () => {
+      const maxDim = 1024;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      if (scale === 1) {
+        setFile(f);
+        setPreview(url);
+        return;
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = img.width * scale;
+      canvas.height = img.height * scale;
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => {
+        const resized = new File([blob], f.name, { type: "image/jpeg" });
+        setFile(resized);
+        setPreview(URL.createObjectURL(resized));
+        URL.revokeObjectURL(url);
+      }, "image/jpeg", 0.85);
+    };
+    img.src = url;
   };
 
   const analyze = async () => {
@@ -221,8 +241,8 @@ function App() {
         }
       `}</style>
 
-      <div className="blob" style={{ width: 480, height: 480, top: -100, left: -100, background: C.gold, animation: "drift1 14s ease-in-out infinite" }} />
-      <div className="blob" style={{ width: 420, height: 420, bottom: -120, right: -100, background: C.cane, animation: "drift2 16s ease-in-out infinite" }} />
+      <div className="blob" style={{ width: 320, height: 320, top: -80, left: -80, background: C.gold, animation: "drift1 14s ease-in-out infinite" }} />
+      <div className="blob" style={{ width: 280, height: 280, bottom: -90, right: -80, background: C.cane, animation: "drift2 16s ease-in-out infinite" }} />
 
       <div style={S.content}>
       {toast && (
