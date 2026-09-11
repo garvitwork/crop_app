@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 
 /* ---- Design tokens (All-Green) ---- */
 const C = {
@@ -16,6 +16,9 @@ const C = {
 const serif = "'Iowan Old Style', 'Palatino Linotype', Georgia, serif";
 const sans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
 
+const API = "https://crop-app-jhi8.onrender.com";
+const DASHBOARD_REFRESH_MS = 30000;
+
 const threats = [
   { crop: "Tomato", name: "Early Blight", desc: "Warm, humid conditions and prolonged leaf wetness invite this fungus.", prevent: "Remove infected leaves, avoid overhead watering, apply Mancozeb 2g/L as a preventive spray, rotate crops yearly.", accent: C.rust },
   { crop: "Rice", name: "Blast", desc: "High humidity, dense canopy and favourable weather raise pressure.", prevent: "Use resistant varieties, avoid excess nitrogen, apply Tricyclazole at first symptom, keep fields drained.", accent: C.gold },
@@ -30,15 +33,12 @@ const steps = [
   { n: "4", t: "Act locally", d: "A hotspot map and sensor readings help track spread and plan the response." },
 ];
 
-// insights now fetched live from /hotspots
-
 function cleanAdvisory(text) {
   return text.replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*(.*?)\*/g, "$1").replace(/^-{3,}$/gm, "");
 }
 
 function parseAdvisory(raw) {
   let text = cleanAdvisory(raw).trim();
-  // break inline "1. Title:" / "2. Title:" style sub-headers onto their own lines
   text = text.replace(/(^|\s)(\d{1,2}\.\s+[A-Za-zऀ-ॿ][A-Za-z0-9ऀ-ॿ /'&-]{2,40}:)/g, "\n$2");
   const lines = text.split("\n");
   const sections = [];
@@ -72,12 +72,38 @@ const iconFor = (title) => {
 
 const riskStyle = (risk, C) => {
   const r = (risk || "").toLowerCase();
-  if (r.includes("high")) return { color: C.rust, icon: "🔥" };
-  if (r.includes("med")) return { color: C.gold, icon: "⚠️" };
-  return { color: C.cane, icon: "✅" };
+  if (r.includes("high")) return { color: C.rust, icon: "🔥", weight: 3 };
+  if (r.includes("med") || r.includes("moderate")) return { color: C.gold, icon: "⚠️", weight: 2 };
+  if (r === "n/a" || r === "") return { color: C.sand, icon: "•", weight: 0 };
+  return { color: C.cane, icon: "✅", weight: 1 };
 };
 
 const confColor = (pct, C) => (pct < 45 ? C.rust : pct < 70 ? C.gold : C.cane);
+
+function timeAgo(iso) {
+  const diff = Math.max(0, Date.now() - new Date(iso).getTime());
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  return `${Math.floor(h / 24)}d ago`;
+}
+
+function downloadCSV(rows, filename) {
+  if (!rows.length) return;
+  const headers = Object.keys(rows[0]);
+  const csv = [headers.join(",")]
+    .concat(rows.map((r) => headers.map((h) => `"${String(r[h]).replace(/"/g, '""')}"`).join(",")))
+    .join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 function Reveal({ children, delay = 0, style, className }) {
   const ref = useRef(null);
@@ -90,6 +116,150 @@ function Reveal({ children, delay = 0, style, className }) {
   return (
     <div ref={ref} className={className} style={{ opacity: vis ? 1 : 0, transform: vis ? "translateY(0)" : "translateY(26px)", transition: `opacity .6s ease-out ${delay}s, transform .6s ease-out ${delay}s`, ...style }}>
       {children}
+    </div>
+  );
+}
+
+/* ---------- Small chart primitives, built from real fetched data only ---------- */
+
+function Donut({ segments, size = 108, thickness = 14 }) {
+  // segments: [{ value, color, label }]
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  const r = (size - thickness) / 2;
+  const circ = 2 * Math.PI * r;
+  let offset = 0;
+  return (
+    <svg width={size} height={size} style={{ transform: "rotate(-90deg)" }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={C.line} strokeWidth={thickness} />
+      {segments.map((s, i) => {
+        const frac = s.value / total;
+        const dash = frac * circ;
+        const circle = (
+          <circle
+            key={i}
+            cx={size / 2}
+            cy={size / 2}
+            r={r}
+            fill="none"
+            stroke={s.color}
+            strokeWidth={thickness}
+            strokeDasharray={`${dash} ${circ - dash}`}
+            strokeDashoffset={-offset}
+            strokeLinecap="butt"
+            style={{ transition: "stroke-dasharray 1s ease-out" }}
+          />
+        );
+        offset += dash;
+        return circle;
+      })}
+    </svg>
+  );
+}
+
+function HBar({ label, value, max, color, suffix = "" }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12.5, marginBottom: 4 }}>
+        <span style={{ color: C.ivory }}>{label}</span>
+        <span style={{ color, fontWeight: 700 }}>{value}{suffix}</span>
+      </div>
+      <div style={{ background: C.line, borderRadius: 3, height: 7 }}>
+        <div style={{ background: color, height: 7, borderRadius: 3, width: `${pct}%`, transition: "width .8s ease-out", boxShadow: `0 0 6px ${color}66` }} />
+      </div>
+    </div>
+  );
+}
+
+function Sparkline({ points, color, width = 220, height = 52 }) {
+  if (!points.length) return <div style={{ color: C.sand, fontSize: 12.5 }}>Not enough data yet</div>;
+  const max = Math.max(...points, 1);
+  const min = Math.min(...points, 0);
+  const range = max - min || 1;
+  const stepX = points.length > 1 ? width / (points.length - 1) : width;
+  const coords = points.map((p, i) => {
+    const x = i * stepX;
+    const y = height - ((p - min) / range) * (height - 8) - 4;
+    return [x, y];
+  });
+  const path = coords.map(([x, y], i) => `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  const last = coords[coords.length - 1];
+  return (
+    <svg width={width} height={height}>
+      <path d={path} fill="none" stroke={color} strokeWidth={2} style={{ filter: `drop-shadow(0 0 4px ${color}88)` }} />
+      <circle cx={last[0]} cy={last[1]} r={3.5} fill={color} />
+    </svg>
+  );
+}
+
+/* ---------- District detail modal ---------- */
+
+function DistrictModal({ district, recentScans, insights, onClose }) {
+  const risk = riskStyle(district.pest_disease_risk, C);
+  const scans = recentScans.filter((s) => s.district === district.district);
+  const hotspot = insights.find((h) => h.region === district.district);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(4,10,7,.82)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: C.surface, border: `1px solid ${C.line}`, borderTop: `3px solid ${risk.color}`, borderRadius: 8, padding: 32, maxWidth: 480, width: "100%", maxHeight: "80vh", overflowY: "auto", boxShadow: `0 0 14px ${risk.color}55` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div>
+            <div style={{ color: C.sand, fontSize: 13 }}>District briefing</div>
+            <div style={{ fontFamily: serif, fontSize: 27 }}>{district.district}</div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: risk.color, fontWeight: 700, fontSize: 13.5 }}>
+            <span>{risk.icon}</span>{district.pest_disease_risk} risk
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, margin: "18px 0", flexWrap: "wrap" }}>
+          <div style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", flex: 1, minWidth: 110 }}>
+            <div style={{ color: C.sand, fontSize: 11.5 }}>Temperature</div>
+            <div style={{ fontSize: 18, fontFamily: serif }}>{district.temperature_C != null ? `${district.temperature_C}°C` : "—"}</div>
+          </div>
+          <div style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", flex: 1, minWidth: 110 }}>
+            <div style={{ color: C.sand, fontSize: 11.5 }}>Humidity</div>
+            <div style={{ fontSize: 18, fontFamily: serif }}>{district.humidity_percent != null ? `${district.humidity_percent}%` : "—"}</div>
+          </div>
+          {hotspot && (
+            <div style={{ background: C.surface2, border: `1px solid ${C.line}`, borderRadius: 8, padding: "10px 14px", flex: 1, minWidth: 110 }}>
+              <div style={{ color: C.sand, fontSize: 11.5 }}>Hotspot severity</div>
+              <div style={{ fontSize: 18, fontFamily: serif, color: hotspot.pct > 70 ? C.rust : hotspot.pct > 40 ? C.gold : C.cane }}>{hotspot.pct}%</div>
+            </div>
+          )}
+        </div>
+
+        {hotspot && (
+          <div style={{ color: C.sand, fontSize: 13.5, marginBottom: 18 }}>
+            Reported condition: <span style={{ color: C.ivory }}>{hotspot.risk}</span>
+          </div>
+        )}
+
+        <div style={{ height: 1, background: C.line, margin: "6px 0 16px" }} />
+        <div style={{ fontSize: 13, color: C.sand, marginBottom: 10 }}>
+          Farmer submissions from {district.district} ({scans.length})
+        </div>
+        {scans.length === 0 && (
+          <div style={{ color: C.sand, fontSize: 13.5 }}>No submissions logged from this district yet.</div>
+        )}
+        {scans.map((s, i) => {
+          const sr = riskStyle(s.risk, C);
+          const conf = s.confidence * 100;
+          return (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: i < scans.length - 1 ? `1px solid ${C.line}` : "none" }}>
+              <div>
+                <div style={{ fontSize: 13.5, fontWeight: 600 }}>{s.crop}</div>
+                <div style={{ fontSize: 12, color: C.sand }}>{s.predicted_class.replace(/_/g, " ")}</div>
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 12.5, color: confColor(conf, C), fontWeight: 700 }}>{conf.toFixed(0)}%</div>
+                <div style={{ fontSize: 11, color: sr.color }}>{sr.icon} {s.risk}</div>
+              </div>
+            </div>
+          );
+        })}
+
+        <button style={{ background: "transparent", border: `1px solid ${C.line}`, color: C.ivory, padding: "11px 22px", borderRadius: 4, cursor: "pointer", fontSize: 14.5, width: "100%", marginTop: 22 }} onClick={onClose}>Close</button>
+      </div>
     </div>
   );
 }
@@ -109,6 +279,17 @@ function App() {
   const [districtsData, setDistrictsData] = useState([]);
   const [recentScans, setRecentScans] = useState([]);
 
+  // ---- dashboard-only state ----
+  const [dashLoading, setDashLoading] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [autoRefresh, setAutoRefresh] = useState(true);
+  const [districtModal, setDistrictModal] = useState(null);
+  const [scanSearch, setScanSearch] = useState("");
+  const [scanCropFilter, setScanCropFilter] = useState("All");
+  const [scanRiskFilter, setScanRiskFilter] = useState("All");
+  const [scanSort, setScanSort] = useState("newest");
+  const [districtSort, setDistrictSort] = useState("risk");
+
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
   const scanRef = useRef(null);
@@ -116,30 +297,42 @@ function App() {
   const insightsRef = useRef(null);
 
   useEffect(() => {
-    fetch("https://crop-app-jhi8.onrender.com/hotspots")
+    fetch(`${API}/hotspots`)
       .then((r) => r.json())
       .then(setInsights)
       .catch(() => setInsights([]));
   }, []);
 
+  const loadDashboard = () => {
+    setDashLoading(true);
+    Promise.allSettled([
+      fetch(`${API}/districts-weather`).then((r) => r.json()),
+      fetch(`${API}/recent-scans`).then((r) => r.json()),
+      fetch(`${API}/hotspots`).then((r) => r.json()),
+    ]).then(([d, s, h]) => {
+      if (d.status === "fulfilled") setDistrictsData(d.value);
+      if (s.status === "fulfilled") setRecentScans(s.value);
+      if (h.status === "fulfilled") setInsights(h.value);
+      setLastUpdated(new Date());
+      setDashLoading(false);
+    });
+  };
+
   useEffect(() => {
     if (view !== "dashboard") return;
-    fetch("https://crop-app-jhi8.onrender.com/districts-weather")
-      .then((r) => r.json())
-      .then(setDistrictsData)
-      .catch(() => setDistrictsData([]));
-    fetch("https://crop-app-jhi8.onrender.com/recent-scans")
-      .then((r) => r.json())
-      .then(setRecentScans)
-      .catch(() => setRecentScans([]));
-  }, [view]);
+    loadDashboard();
+    if (!autoRefresh) return;
+    const id = setInterval(loadDashboard, DASHBOARD_REFRESH_MS);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, autoRefresh]);
 
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const [waking, setWaking] = useState(false);
   const wakeApi = async () => {
     setWaking(true);
     try {
-      await fetch("https://crop-app-jhi8.onrender.com/health");
+      await fetch(`${API}/health`);
       showToast("Server is awake ✅");
     } catch {
       showToast("Waking… try again in a few seconds");
@@ -182,7 +375,7 @@ function App() {
     formData.append("district", district);
     formData.append("crop", crop);
     try {
-      const res = await fetch("https://crop-app-jhi8.onrender.com/analyze", { method: "POST", body: formData });
+      const res = await fetch(`${API}/analyze`, { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok || data.error) {
         showToast(data.error || `Server error (${res.status}). Try again.`);
@@ -213,6 +406,91 @@ function App() {
     glowBox: { background: C.surface, border: `1px solid ${C.line}`, borderRadius: 10, boxShadow: `0 0 0 1px ${C.line}, 0 8px 30px -10px ${C.gold}33` },
   };
 
+  /* ---------------- Dashboard derived data (all computed from real fetched state) ---------------- */
+
+  const summary = useMemo(() => {
+    const highRiskDistricts = districtsData.filter((d) => riskStyle(d.pest_disease_risk, C).weight === 3).length;
+    const severeHotspots = insights.filter((h) => h.pct > 70).length;
+    const totalScans = recentScans.length;
+    const avgConfidence = totalScans ? (recentScans.reduce((s, r) => s + r.confidence, 0) / totalScans) * 100 : null;
+    return { highRiskDistricts, severeHotspots, totalScans, avgConfidence, districtsTracked: districtsData.length };
+  }, [districtsData, insights, recentScans]);
+
+  const riskCounts = useMemo(() => {
+    const counts = { High: 0, Moderate: 0, Low: 0 };
+    districtsData.forEach((d) => {
+      const r = riskStyle(d.pest_disease_risk, C);
+      if (r.weight === 3) counts.High++;
+      else if (r.weight === 2) counts.Moderate++;
+      else if (r.weight === 1) counts.Low++;
+    });
+    return counts;
+  }, [districtsData]);
+
+  const cropCounts = useMemo(() => {
+    const m = {};
+    recentScans.forEach((s) => { m[s.crop] = (m[s.crop] || 0) + 1; });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]);
+  }, [recentScans]);
+
+  const diseaseCounts = useMemo(() => {
+    const m = {};
+    recentScans.forEach((s) => {
+      const label = s.predicted_class.replace(/_/g, " ");
+      m[label] = (m[label] || 0) + 1;
+    });
+    return Object.entries(m).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  }, [recentScans]);
+
+  const confidenceTrend = useMemo(
+    () => [...recentScans].reverse().map((s) => s.confidence * 100),
+    [recentScans]
+  );
+
+  const alertItems = useMemo(() => {
+    const items = [];
+    districtsData.forEach((d) => {
+      if (riskStyle(d.pest_disease_risk, C).weight === 3) {
+        items.push({ key: `d-${d.district}`, text: `${d.district} is at high weather-driven risk (${d.temperature_C}°C, ${d.humidity_percent}% humidity) — schedule a preventive advisory.`, color: C.rust });
+      }
+    });
+    insights.forEach((h) => {
+      if (h.pct >= 80) {
+        items.push({ key: `h-${h.region}`, text: `${h.region} shows a ${h.pct}% hotspot severity (${h.risk}) — prioritize an extension visit.`, color: C.rust });
+      }
+    });
+    return items;
+  }, [districtsData, insights]);
+
+  const filteredScans = useMemo(() => {
+    let rows = recentScans.filter((s) => {
+      const matchesSearch = scanSearch.trim() === "" ||
+        `${s.crop} ${s.district} ${s.predicted_class}`.toLowerCase().includes(scanSearch.toLowerCase());
+      const matchesCrop = scanCropFilter === "All" || s.crop === scanCropFilter;
+      const matchesRisk = scanRiskFilter === "All" || (s.risk || "").toLowerCase().includes(scanRiskFilter.toLowerCase());
+      return matchesSearch && matchesCrop && matchesRisk;
+    });
+    rows = [...rows].sort((a, b) => {
+      if (scanSort === "newest") return new Date(b.timestamp) - new Date(a.timestamp);
+      if (scanSort === "oldest") return new Date(a.timestamp) - new Date(b.timestamp);
+      if (scanSort === "confidence") return b.confidence - a.confidence;
+      return 0;
+    });
+    return rows;
+  }, [recentScans, scanSearch, scanCropFilter, scanRiskFilter, scanSort]);
+
+  const sortedDistricts = useMemo(() => {
+    return [...districtsData].sort((a, b) => {
+      if (districtSort === "risk") return riskStyle(b.pest_disease_risk, C).weight - riskStyle(a.pest_disease_risk, C).weight;
+      if (districtSort === "name") return a.district.localeCompare(b.district);
+      if (districtSort === "temp") return (b.temperature_C ?? -999) - (a.temperature_C ?? -999);
+      if (districtSort === "humidity") return (b.humidity_percent ?? -999) - (a.humidity_percent ?? -999);
+      return 0;
+    });
+  }, [districtsData, districtSort]);
+
+  const uniqueCrops = useMemo(() => ["All", ...new Set(recentScans.map((s) => s.crop))], [recentScans]);
+
   return (
     <div style={S.page}>
       {/* Animation keyframes */}
@@ -233,9 +511,17 @@ function App() {
         .btn-ghost:hover { border-color: ${C.gold}; color: ${C.gold}; box-shadow: 0 0 14px ${C.gold}33; }
         .threat-card { transition: transform .25s ease, box-shadow .25s ease, background .2s ease; }
         .threat-card:hover { transform: translateY(-5px); }
+        .district-card { transition: transform .2s ease, box-shadow .2s ease; cursor: pointer; }
+        .district-card:hover { transform: translateY(-3px); box-shadow: 0 0 16px ${C.gold}33; }
         .step-box:hover .step-num { text-shadow: 0 0 16px ${C.gold}; transform: scale(1.1); }
         .step-num { transition: transform .2s, text-shadow .2s; display: inline-block; }
         .blob { position: fixed; border-radius: 50%; filter: blur(70px); opacity: .18; pointer-events: none; z-index: 0; }
+        select, input.dash-input { outline: none; }
+        select:focus, input.dash-input:focus { border-color: ${C.gold} !important; box-shadow: 0 0 0 2px ${C.gold}33; }
+        table.scan-table th { text-align: left; font-weight: 600; color: ${C.sand}; font-size: 12px; padding: 10px 12px; border-bottom: 1px solid ${C.line}; }
+        table.scan-table td { padding: 10px 12px; font-size: 13px; border-bottom: 1px solid ${C.line}; }
+        table.scan-table tr:last-child td { border-bottom: none; }
+        table.scan-table tr:hover td { background: ${C.surface2}; }
         @keyframes drift1 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(60px,40px); } }
         @keyframes drift2 { 0%,100% { transform: translate(0,0); } 50% { transform: translate(-50px,-30px); } }
         @keyframes scanMove { 0% { top: 4%; opacity: .2; } 45% { opacity: 1; } 50% { top: 92%; opacity: 1; } 55% { opacity: .2; } 100% { top: 4%; opacity: .2; } }
@@ -248,11 +534,13 @@ function App() {
         @keyframes popIn { from { opacity: 0; transform: scale(.85); } to { opacity: 1; transform: scale(1); } }
         @keyframes chipPulse { 0%,100% { box-shadow: 0 0 0px transparent; } 50% { box-shadow: 0 0 10px currentColor; } }
         @keyframes ringSpin { to { transform: rotate(360deg); } }
+        @keyframes livePulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
         @media (max-width: 760px) {
           .hero-grid, .insights-wrap, .scan-grid { grid-template-columns: 1fr !important; }
-          .insights-grid { grid-template-columns: 1fr !important; }
+          .insights-grid, .stat-strip, .analytics-grid { grid-template-columns: 1fr !important; }
           .nav-links { display: none !important; }
           .map-frame { height: 260px !important; }
+          .scan-table-wrap { overflow-x: auto; }
         }
       `}</style>
 
@@ -280,6 +568,10 @@ function App() {
         </div>
       )}
 
+      {districtModal && (
+        <DistrictModal district={districtModal} recentScans={recentScans} insights={insights} onClose={() => setDistrictModal(null)} />
+      )}
+
       {/* NAV */}
       <div style={{ ...S.nav, flexWrap: "wrap", gap: 12 }}>
         <div style={{ ...S.logo, animation: "floatIcon 3s ease-in-out infinite" }}>CropGuard</div>
@@ -297,33 +589,149 @@ function App() {
 
       {view === "dashboard" ? (
         <div style={S.section}>
-          <div style={S.kicker}>For agriculture officials</div>
-          <div style={S.h2}>Regional risk dashboard</div>
-          <div style={S.body}>Live weather-based risk across all tracked districts, plus current top disease hotspots — for planning extension visits and preventive interventions.</div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", flexWrap: "wrap", gap: 16 }}>
+            <div>
+              <div style={S.kicker}>For agriculture officials</div>
+              <div style={S.h2}>Regional risk dashboard</div>
+              <div style={S.body}>Live weather-based risk across all tracked districts, disease hotspots and farmer-submitted scans — for planning extension visits and preventive interventions.</div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 6 }}>
+              <label style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13, color: C.sand, cursor: "pointer" }}>
+                <input type="checkbox" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)} />
+                Auto-refresh (30s)
+              </label>
+              <button className="btn-ghost" style={{ ...S.ghostBtn, padding: "8px 16px", fontSize: 13 }} onClick={loadDashboard} disabled={dashLoading}>
+                {dashLoading ? "Refreshing…" : "Refresh now"}
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.sand }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.gold, animation: "livePulse 1.6s ease-in-out infinite" }} />
+                {lastUpdated ? `Updated ${timeAgo(lastUpdated.toISOString())}` : "Loading…"}
+              </div>
+            </div>
+          </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 40 }}>
-            {districtsData.length === 0 && <div style={{ color: C.sand }}>Loading district data…</div>}
-            {districtsData.map((d, i) => {
+          {/* SUMMARY STAT STRIP */}
+          <div className="stat-strip" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, margin: "32px 0 40px" }}>
+            {[
+              { label: "Districts tracked", value: summary.districtsTracked, color: C.cane, sub: "weather-monitored" },
+              { label: "High-risk districts", value: summary.highRiskDistricts, color: C.rust, sub: "need attention now" },
+              { label: "Severe hotspots", value: summary.severeHotspots, color: C.rust, sub: "≥ 70% activity" },
+              { label: "Farmer scans logged", value: summary.totalScans, color: C.gold, sub: summary.avgConfidence != null ? `avg ${summary.avgConfidence.toFixed(0)}% confidence` : "no submissions yet" },
+            ].map((s, i) => (
+              <Reveal key={s.label} delay={i * 0.05}>
+                <div style={{ ...S.glowBox, padding: "18px 20px" }}>
+                  <div style={{ color: C.sand, fontSize: 12.5, marginBottom: 6 }}>{s.label}</div>
+                  <div style={{ fontFamily: serif, fontSize: 32, color: s.color, textShadow: `0 0 10px ${s.color}44` }}>{s.value}</div>
+                  <div style={{ color: C.sand, fontSize: 11.5, marginTop: 4 }}>{s.sub}</div>
+                </div>
+              </Reveal>
+            ))}
+          </div>
+
+          {/* ALERTS PANEL */}
+          {alertItems.length > 0 && (
+            <Reveal style={{ ...S.glowBox, padding: 20, marginBottom: 40, borderLeft: `3px solid ${C.rust}` }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <span style={{ fontSize: 17 }}>🚨</span>
+                <span style={{ fontFamily: serif, fontSize: 19 }}>Needs attention</span>
+                <span style={{ color: C.sand, fontSize: 13 }}>({alertItems.length})</span>
+              </div>
+              <div style={{ display: "grid", gap: 10 }}>
+                {alertItems.map((a) => (
+                  <div key={a.key} style={{ display: "flex", gap: 10, alignItems: "flex-start", background: `${a.color}14`, border: `1px solid ${a.color}44`, borderRadius: 8, padding: "10px 14px", fontSize: 13.5, color: C.ivory }}>
+                    <span style={{ color: a.color }}>●</span>
+                    <span>{a.text}</span>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          )}
+
+          {/* DISTRICT CARDS */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, marginBottom: 16 }}>
+            <div style={S.kicker}>District weather risk</div>
+            <select className="dash-input" value={districtSort} onChange={(e) => setDistrictSort(e.target.value)} style={{ background: C.bg, color: C.ivory, border: `1px solid ${C.line}`, padding: "8px 12px", borderRadius: 4, fontSize: 13 }}>
+              <option value="risk">Sort by risk</option>
+              <option value="name">Sort by name</option>
+              <option value="temp">Sort by temperature</option>
+              <option value="humidity">Sort by humidity</option>
+            </select>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 16, marginBottom: 44 }}>
+            {sortedDistricts.length === 0 && <div style={{ color: C.sand }}>Loading district data…</div>}
+            {sortedDistricts.map((d, i) => {
               const risk = riskStyle(d.pest_disease_risk, C);
+              const hotspot = insights.find((h) => h.region === d.district);
               return (
                 <Reveal key={d.district} delay={i * 0.05}>
-                  <div style={{ ...S.glowBox, padding: 18, borderLeft: `3px solid ${risk.color}` }}>
-                    <div style={{ fontFamily: serif, fontSize: 19, marginBottom: 6 }}>{d.district}</div>
+                  <div className="district-card" onClick={() => setDistrictModal(d)} style={{ ...S.glowBox, padding: 18, borderLeft: `3px solid ${risk.color}` }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+                      <div style={{ fontFamily: serif, fontSize: 19, marginBottom: 6 }}>{d.district}</div>
+                      {hotspot && <div style={{ fontSize: 11.5, color: C.sand }}>{hotspot.pct}% activity</div>}
+                    </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, color: risk.color, fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>
                       <span>{risk.icon}</span>{d.pest_disease_risk} risk
                     </div>
                     <div style={{ color: C.sand, fontSize: 13 }}>
                       {d.temperature_C != null ? `🌡️ ${d.temperature_C}°C · 💧 ${d.humidity_percent}%` : "Weather unavailable"}
                     </div>
+                    <div style={{ color: C.gold, fontSize: 12, marginTop: 10, fontWeight: 600 }}>View briefing →</div>
                   </div>
                 </Reveal>
               );
             })}
           </div>
 
+          {/* ANALYTICS ROW: risk mix, crop breakdown, disease breakdown, confidence trend */}
+          <div style={S.kicker}>Regional analytics</div>
+          <div className="analytics-grid" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, marginBottom: 44 }}>
+            <Reveal style={{ ...S.glowBox, padding: 20, display: "flex", flexDirection: "column", alignItems: "center" }}>
+              <div style={{ color: C.sand, fontSize: 12.5, marginBottom: 12, alignSelf: "flex-start" }}>Risk mix across districts</div>
+              <Donut segments={[
+                { value: riskCounts.High, color: C.rust },
+                { value: riskCounts.Moderate, color: C.gold },
+                { value: riskCounts.Low, color: C.cane },
+              ]} />
+              <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap", justifyContent: "center" }}>
+                {[["High", C.rust], ["Moderate", C.gold], ["Low", C.cane]].map(([label, col]) => (
+                  <div key={label} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 12 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: "50%", background: col }} />
+                    <span style={{ color: C.sand }}>{label} ({riskCounts[label]})</span>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+
+            <Reveal delay={0.05} style={{ ...S.glowBox, padding: 20 }}>
+              <div style={{ color: C.sand, fontSize: 12.5, marginBottom: 14 }}>Scans by crop</div>
+              {cropCounts.length === 0 && <div style={{ color: C.sand, fontSize: 13 }}>No submissions yet</div>}
+              {cropCounts.map(([crop, count]) => (
+                <HBar key={crop} label={crop} value={count} max={cropCounts[0]?.[1] || 1} color={C.cane} />
+              ))}
+            </Reveal>
+
+            <Reveal delay={0.1} style={{ ...S.glowBox, padding: 20 }}>
+              <div style={{ color: C.sand, fontSize: 12.5, marginBottom: 14 }}>Top diagnoses reported</div>
+              {diseaseCounts.length === 0 && <div style={{ color: C.sand, fontSize: 13 }}>No submissions yet</div>}
+              {diseaseCounts.map(([label, count]) => (
+                <HBar key={label} label={label} value={count} max={diseaseCounts[0]?.[1] || 1} color={C.gold} />
+              ))}
+            </Reveal>
+
+            <Reveal delay={0.15} style={{ ...S.glowBox, padding: 20 }}>
+              <div style={{ color: C.sand, fontSize: 12.5, marginBottom: 14 }}>Confidence trend (submission order)</div>
+              <Sparkline points={confidenceTrend} color={C.gold} />
+              <div style={{ color: C.sand, fontSize: 11.5, marginTop: 10 }}>
+                {confidenceTrend.length > 0 ? `Latest: ${confidenceTrend[confidenceTrend.length - 1].toFixed(0)}%` : "Waiting for submissions"}
+              </div>
+            </Reveal>
+          </div>
+
+          {/* HOTSPOTS */}
           <div style={S.kicker}>Current top hotspots</div>
-          <div style={{ ...S.glowBox, padding: 20 }}>
+          <div style={{ ...S.glowBox, padding: 20, marginBottom: 44 }}>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+              {insights.length === 0 && <div style={{ color: C.sand, fontSize: 14 }}>Loading hotspot data…</div>}
               {insights.map((r, i) => {
                 const col = r.pct > 70 ? C.rust : r.pct > 40 ? C.gold : C.cane;
                 return (
@@ -333,35 +741,83 @@ function App() {
                       <span style={{ color: col, fontWeight: 700, fontSize: 13 }}>{r.pct}%</span>
                     </div>
                     <div style={{ color: C.sand, fontSize: 12.5 }}>{r.risk}</div>
+                    <div style={{ background: C.line, borderRadius: 3, height: 5, marginTop: 8 }}>
+                      <div style={{ background: col, height: 5, borderRadius: 3, width: `${r.pct}%`, transition: "width 1s ease-out" }} />
+                    </div>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          <div style={{ ...S.kicker, marginTop: 40 }}>Recent field submissions</div>
-          <div style={S.body}>Live feed of actual farmer uploads processed by the system — crop, AI diagnosis, confidence, and local risk at the moment of submission.</div>
-          <div style={{ ...S.glowBox, padding: 0, overflow: "hidden" }}>
-            {recentScans.length === 0 && <div style={{ color: C.sand, padding: 20 }}>No submissions yet — results appear here as farmers scan crops.</div>}
-            {recentScans.map((s, i) => {
-              const risk = riskStyle(s.risk, C);
-              const conf = s.confidence * 100;
-              const cCol = confColor(conf, C);
-              const t = new Date(s.timestamp);
-              return (
-                <div key={i} style={{
-                  display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr auto", gap: 12, alignItems: "center",
-                  padding: "12px 18px", borderBottom: i < recentScans.length - 1 ? `1px solid ${C.line}` : "none",
-                  animation: `fadeInUp .4s ease-out ${i * 0.03}s both`,
-                }}>
-                  <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.crop} <span style={{ color: C.sand }}>· {s.district}</span></div>
-                  <div style={{ fontSize: 13 }}>{s.predicted_class.replace(/_/g, " ")}</div>
-                  <div style={{ color: cCol, fontWeight: 700, fontSize: 13 }}>{conf.toFixed(0)}% conf.</div>
-                  <div style={{ color: risk.color, fontSize: 13 }}>{risk.icon} {s.risk}</div>
-                  <div style={{ color: C.sand, fontSize: 11.5, whiteSpace: "nowrap" }}>{t.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</div>
-                </div>
-              );
-            })}
+          {/* RECENT FIELD SUBMISSIONS: searchable, filterable, sortable table with export */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", flexWrap: "wrap", gap: 16, marginBottom: 4 }}>
+            <div>
+              <div style={S.kicker}>Recent field submissions</div>
+              <div style={{ ...S.body, marginBottom: 0 }}>Live feed of actual farmer uploads processed by the system — crop, AI diagnosis, confidence, and local risk at the moment of submission.</div>
+            </div>
+            <button className="btn-ghost" style={{ ...S.ghostBtn, padding: "9px 16px", fontSize: 13 }} onClick={() => downloadCSV(recentScans, "cropguard_recent_scans.csv")} disabled={recentScans.length === 0}>
+              Export CSV
+            </button>
+          </div>
+
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "20px 0 16px" }}>
+            <input className="dash-input" placeholder="Search crop, district or diagnosis…" value={scanSearch} onChange={(e) => setScanSearch(e.target.value)}
+              style={{ background: C.bg, color: C.ivory, border: `1px solid ${C.line}`, padding: "9px 12px", borderRadius: 4, fontSize: 13.5, flex: "1 1 240px" }} />
+            <select className="dash-input" value={scanCropFilter} onChange={(e) => setScanCropFilter(e.target.value)} style={{ background: C.bg, color: C.ivory, border: `1px solid ${C.line}`, padding: "9px 12px", borderRadius: 4, fontSize: 13.5 }}>
+              {uniqueCrops.map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <select className="dash-input" value={scanRiskFilter} onChange={(e) => setScanRiskFilter(e.target.value)} style={{ background: C.bg, color: C.ivory, border: `1px solid ${C.line}`, padding: "9px 12px", borderRadius: 4, fontSize: 13.5 }}>
+              <option value="All">All risk levels</option>
+              <option value="High">High</option>
+              <option value="Moderate">Moderate</option>
+              <option value="Low">Low</option>
+            </select>
+            <select className="dash-input" value={scanSort} onChange={(e) => setScanSort(e.target.value)} style={{ background: C.bg, color: C.ivory, border: `1px solid ${C.line}`, padding: "9px 12px", borderRadius: 4, fontSize: 13.5 }}>
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="confidence">Highest confidence</option>
+            </select>
+          </div>
+
+          <div className="scan-table-wrap" style={{ ...S.glowBox, padding: 0, overflow: "hidden" }}>
+            {filteredScans.length === 0 && (
+              <div style={{ color: C.sand, padding: 20 }}>
+                {recentScans.length === 0 ? "No submissions yet — results appear here as farmers scan crops." : "No submissions match these filters."}
+              </div>
+            )}
+            {filteredScans.length > 0 && (
+              <table className="scan-table" style={{ width: "100%", borderCollapse: "collapse", minWidth: 640 }}>
+                <thead>
+                  <tr>
+                    <th>Crop / district</th>
+                    <th>Diagnosis</th>
+                    <th>Confidence</th>
+                    <th>Risk</th>
+                    <th>When</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredScans.map((s, i) => {
+                    const risk = riskStyle(s.risk, C);
+                    const conf = s.confidence * 100;
+                    const cCol = confColor(conf, C);
+                    return (
+                      <tr key={i} style={{ animation: `fadeInUp .35s ease-out ${Math.min(i, 10) * 0.02}s both` }}>
+                        <td style={{ fontWeight: 600 }}>{s.crop} <span style={{ color: C.sand, fontWeight: 400 }}>· {s.district}</span></td>
+                        <td>{s.predicted_class.replace(/_/g, " ")}</td>
+                        <td style={{ color: cCol, fontWeight: 700 }}>{conf.toFixed(0)}%</td>
+                        <td style={{ color: risk.color }}>{risk.icon} {s.risk}</td>
+                        <td style={{ color: C.sand, whiteSpace: "nowrap" }}>{timeAgo(s.timestamp)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <div style={{ color: C.sand, fontSize: 12, marginTop: 10 }}>
+            Showing {filteredScans.length} of {recentScans.length} logged submissions.
           </div>
         </div>
       ) : (
