@@ -53,7 +53,7 @@ $2`);let n=t.split(`
         @media (max-width: 760px) {
           .hero-grid, .insights-wrap, .scan-grid { grid-template-columns: 1fr !important; }
           .insights-grid, .stat-strip, .analytics-grid { grid-template-columns: 1fr !important; }
-          .nav-links { display: none !important; }
+          .nav-links { gap: 16px !important; font-size: 13px !important; flex-wrap: wrap !important; }
           .map-frame { height: 260px !important; }
           .scan-table-wrap { overflow-x: auto; }
         }
