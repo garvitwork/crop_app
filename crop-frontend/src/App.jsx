@@ -80,6 +80,16 @@ const riskStyle = (risk, C) => {
 
 const confColor = (pct, C) => (pct < 45 ? C.rust : pct < 70 ? C.gold : C.cane);
 
+function speakText(text, lang) {
+  if (!window.speechSynthesis) return false;
+  window.speechSynthesis.cancel();
+  const utter = new SpeechSynthesisUtterance(text);
+  utter.lang = lang;
+  utter.rate = 0.95;
+  window.speechSynthesis.speak(utter);
+  return true;
+}
+
 function timeAgo(iso) {
   const diff = Math.max(0, Date.now() - new Date(iso).getTime());
   const m = Math.floor(diff / 60000);
@@ -289,6 +299,7 @@ function App() {
   const [scanRiskFilter, setScanRiskFilter] = useState("All");
   const [scanSort, setScanSort] = useState("newest");
   const [districtSort, setDistrictSort] = useState("risk");
+  const [clusters, setClusters] = useState([]);
 
   const fileInputRef = useRef(null);
   const cameraInputRef = useRef(null);
@@ -309,10 +320,12 @@ function App() {
       fetch(`${API}/districts-weather`).then((r) => r.json()),
       fetch(`${API}/recent-scans`).then((r) => r.json()),
       fetch(`${API}/hotspots`).then((r) => r.json()),
-    ]).then(([d, s, h]) => {
+      fetch(`${API}/clusters`).then((r) => r.json()),
+    ]).then(([d, s, h, c]) => {
       if (d.status === "fulfilled") setDistrictsData(d.value);
       if (s.status === "fulfilled") setRecentScans(s.value);
       if (h.status === "fulfilled") setInsights(h.value);
+      if (c.status === "fulfilled") setClusters(c.value);
       setLastUpdated(new Date());
       setDashLoading(false);
     });
@@ -610,7 +623,29 @@ function App() {
             </div>
           </div>
 
-          {/* SUMMARY STAT STRIP */}
+          {/* OUTBREAK CLUSTER DETECTION — auto-flags 3+ matching reports in one district within 6h */}
+          {clusters.length > 0 && (
+            <Reveal style={{ ...S.glowBox, padding: 20, margin: "28px 0", border: `1px solid ${C.rust}`, boxShadow: `0 0 24px ${C.rust}44`, animation: "chipPulse 2.4s ease-in-out infinite" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                <span style={{ fontSize: 19 }}>🧬</span>
+                <span style={{ fontFamily: serif, fontSize: 21, color: C.rust }}>Active outbreak clusters detected</span>
+                <span style={{ color: C.sand, fontSize: 13 }}>({clusters.length})</span>
+              </div>
+              <div style={{ color: C.sand, fontSize: 13, marginBottom: 16 }}>
+                3+ independent farmers reported the same disease in the same district within 6 hours — this crosses individual diagnosis into an early epidemic signal.
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: 14 }}>
+                {clusters.map((cl, i) => (
+                  <div key={i} style={{ background: `${C.rust}18`, border: `1px solid ${C.rust}66`, borderRadius: 8, padding: "14px 16px" }}>
+                    <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{cl.district}</div>
+                    <div style={{ color: C.rust, fontWeight: 600, fontSize: 13.5, marginBottom: 6 }}>{cl.disease}</div>
+                    <div style={{ color: C.ivory, fontSize: 13 }}>{cl.report_count} independent reports · {(cl.avg_confidence * 100).toFixed(0)}% avg confidence</div>
+                    <div style={{ color: C.sand, fontSize: 12, marginTop: 6 }}>First seen {timeAgo(cl.first_seen)} · last {timeAgo(cl.last_seen)}</div>
+                  </div>
+                ))}
+              </div>
+            </Reveal>
+          )}
           <div className="stat-strip" style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 16, margin: "32px 0 40px" }}>
             {[
               { label: "Districts tracked", value: summary.districtsTracked, color: C.cane, sub: "weather-monitored" },
@@ -671,6 +706,8 @@ function App() {
                     </div>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, color: risk.color, fontWeight: 700, fontSize: 13.5, marginBottom: 8 }}>
                       <span>{risk.icon}</span>{d.pest_disease_risk} risk
+                      {d.trend === "rising" && <span title="Risk rising" style={{ color: C.rust, marginLeft: 4 }}>↗</span>}
+                      {d.trend === "falling" && <span title="Risk falling" style={{ color: C.cane, marginLeft: 4 }}>↘</span>}
                     </div>
                     <div style={{ color: C.sand, fontSize: 13 }}>
                       {d.temperature_C != null ? `🌡️ ${d.temperature_C}°C · 💧 ${d.humidity_percent}%` : "Weather unavailable"}
@@ -1064,7 +1101,23 @@ function App() {
 
                   <div style={{ height: 1, background: C.line, margin: "18px 0" }} />
 
-                  <div style={{ color: C.sand, fontSize: 13, marginBottom: 10 }}>Expert advisory</div>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+                    <div style={{ color: C.sand, fontSize: 13 }}>Expert advisory</div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button className="btn-ghost" style={{ ...S.ghostBtn, padding: "6px 12px", fontSize: 12.5 }}
+                        onClick={() => {
+                          const parsed = parseAdvisory(result.advisory);
+                          const english = parsed.filter((s) => !/marathi|सारांश/i.test(s.title)).map((s) => `${s.title}. ${s.body}`).join(". ");
+                          if (!speakText(english, "en-IN")) showToast("Voice playback not supported on this device");
+                        }}>🔊 Listen (English)</button>
+                      <button className="btn-ghost" style={{ ...S.ghostBtn, padding: "6px 12px", fontSize: 12.5 }}
+                        onClick={() => {
+                          const parsed = parseAdvisory(result.advisory);
+                          const mr = parsed.find((s) => /marathi|सारांश/i.test(s.title));
+                          if (!mr || !speakText(mr.body, "mr-IN")) showToast("Marathi voice not supported on this device");
+                        }}>🔊 ऐका (मराठी)</button>
+                    </div>
+                  </div>
                   <div>
                     {parseAdvisory(result.advisory).map((s, i) => (
                       <div key={i}
