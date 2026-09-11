@@ -81,12 +81,22 @@ const riskStyle = (risk, C) => {
 const confColor = (pct, C) => (pct < 45 ? C.rust : pct < 70 ? C.gold : C.cane);
 
 function speakText(text, lang) {
-  if (!window.speechSynthesis) return false;
-  window.speechSynthesis.cancel();
-  const utter = new SpeechSynthesisUtterance(text);
-  utter.lang = lang;
-  utter.rate = 0.95;
-  window.speechSynthesis.speak(utter);
+  if (!window.speechSynthesis || !text || !text.trim()) return false;
+  const doSpeak = () => {
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = lang;
+    utter.rate = 0.95;
+    const voices = window.speechSynthesis.getVoices();
+    const match = voices.find((v) => v.lang === lang) || voices.find((v) => v.lang.startsWith(lang.split("-")[0]));
+    if (match) utter.voice = match;
+    setTimeout(() => window.speechSynthesis.speak(utter), 60); // avoids Chrome cancel+speak race
+  };
+  if (window.speechSynthesis.getVoices().length === 0) {
+    window.speechSynthesis.onvoiceschanged = doSpeak;
+  } else {
+    doSpeak();
+  }
   return true;
 }
 
@@ -624,7 +634,7 @@ function App() {
           </div>
 
           {/* OUTBREAK CLUSTER DETECTION — auto-flags 3+ matching reports in one district within 6h */}
-          {clusters.length > 0 && (
+          {clusters.length > 0 ? (
             <Reveal style={{ ...S.glowBox, padding: 20, margin: "28px 0", border: `1px solid ${C.rust}`, boxShadow: `0 0 24px ${C.rust}44`, animation: "chipPulse 2.4s ease-in-out infinite" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
                 <span style={{ fontSize: 19 }}>🧬</span>
@@ -643,6 +653,14 @@ function App() {
                     <div style={{ color: C.sand, fontSize: 12, marginTop: 6 }}>First seen {timeAgo(cl.first_seen)} · last {timeAgo(cl.last_seen)}</div>
                   </div>
                 ))}
+              </div>
+            </Reveal>
+          ) : (
+            <Reveal style={{ ...S.glowBox, padding: 18, margin: "28px 0", display: "flex", alignItems: "center", gap: 12 }}>
+              <span style={{ width: 9, height: 9, borderRadius: "50%", background: C.cane, animation: "livePulse 1.6s ease-in-out infinite", flexShrink: 0 }} />
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 14 }}>🧬 Outbreak cluster engine — monitoring</div>
+                <div style={{ color: C.sand, fontSize: 12.5, marginTop: 2 }}>No active clusters right now. Auto-flags when 3+ farmers report the same disease in the same district within 6 hours — {recentScans.length} submissions currently in window.</div>
               </div>
             </Reveal>
           )}
@@ -1119,24 +1137,35 @@ function App() {
                     </div>
                   </div>
                   <div>
-                    {parseAdvisory(result.advisory).map((s, i) => (
-                      <div key={i}
-                        style={{
-                          background: C.surface2, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.gold}`, borderRadius: 8,
-                          padding: "14px 16px", marginBottom: 12,
-                          animation: `fadeInUp .5s ease-out ${0.25 + i * 0.15}s both`,
-                          boxShadow: `0 0 0 1px ${C.line}, 0 6px 18px -8px ${C.gold}44`,
-                          transition: "transform .2s, box-shadow .2s",
-                        }}
-                        onMouseEnter={(e) => { e.currentTarget.style.transform = "translateX(4px)"; e.currentTarget.style.boxShadow = `0 0 0 1px ${C.gold}55, 0 8px 22px -6px ${C.gold}66`; }}
-                        onMouseLeave={(e) => { e.currentTarget.style.transform = "translateX(0)"; e.currentTarget.style.boxShadow = `0 0 0 1px ${C.line}, 0 6px 18px -8px ${C.gold}44`; }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                          <span style={{ fontSize: 16 }}>{iconFor(s.title)}</span>
-                          <span style={{ color: C.gold, fontWeight: 700, fontSize: 13.5, letterSpacing: 0.3, textShadow: `0 0 8px ${C.gold}55` }}>{s.title}</span>
+                    {(() => {
+                      const parsed = parseAdvisory(result.advisory);
+                      const hasContent = parsed.length > 0 && parsed.some((s) => s.body && s.body.trim());
+                      if (!hasContent) {
+                        return (
+                          <div style={{ background: C.surface2, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.gold}`, borderRadius: 8, padding: "14px 16px", fontSize: 14.5, color: C.ivory, lineHeight: 1.55, whiteSpace: "pre-wrap" }}>
+                            {result.advisory && result.advisory.trim() ? result.advisory : "No advisory text was returned for this result."}
+                          </div>
+                        );
+                      }
+                      return parsed.map((s, i) => (
+                        <div key={i}
+                          style={{
+                            background: C.surface2, border: `1px solid ${C.line}`, borderLeft: `3px solid ${C.gold}`, borderRadius: 8,
+                            padding: "14px 16px", marginBottom: 12,
+                            animation: `fadeInUp .5s ease-out ${0.25 + i * 0.15}s both`,
+                            boxShadow: `0 0 0 1px ${C.line}, 0 6px 18px -8px ${C.gold}44`,
+                            transition: "transform .2s, box-shadow .2s",
+                          }}
+                          onMouseEnter={(e) => { e.currentTarget.style.transform = "translateX(4px)"; e.currentTarget.style.boxShadow = `0 0 0 1px ${C.gold}55, 0 8px 22px -6px ${C.gold}66`; }}
+                          onMouseLeave={(e) => { e.currentTarget.style.transform = "translateX(0)"; e.currentTarget.style.boxShadow = `0 0 0 1px ${C.line}, 0 6px 18px -8px ${C.gold}44`; }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                            <span style={{ fontSize: 16 }}>{iconFor(s.title)}</span>
+                            <span style={{ color: C.gold, fontWeight: 700, fontSize: 13.5, letterSpacing: 0.3, textShadow: `0 0 8px ${C.gold}55` }}>{s.title}</span>
+                          </div>
+                          <div style={{ fontSize: 14.5, color: C.ivory, lineHeight: 1.55 }}>{s.body}</div>
                         </div>
-                        <div style={{ fontSize: 14.5, color: C.ivory, lineHeight: 1.55 }}>{s.body}</div>
-                      </div>
-                    ))}
+                      ));
+                    })()}
                   </div>
                 </div>
               );
