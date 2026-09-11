@@ -1,14 +1,16 @@
 import os
 import requests
 from google import genai
+from groq import Groq
 from dotenv import load_dotenv
 
 load_dotenv()
 
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
+GEMINI_API_KEY = (os.environ.get("GEMINI_API_KEY") or "").strip()
+GROQ_API_KEY = (os.environ.get("GROQ_API_KEY") or "").strip()
 
 client = genai.Client(api_key=GEMINI_API_KEY)
+groq_client = Groq(api_key=GROQ_API_KEY) if GROQ_API_KEY else None
 
 PROMPT_TEMPLATE = """
 You are an agricultural extension expert helping farmers in Maharashtra, India.
@@ -33,20 +35,14 @@ def _try_gemini(prompt):
 
 
 def _try_groq(prompt):
-    if not GROQ_API_KEY:
+    if not groq_client:
         raise Exception("GROQ_API_KEY is not set in environment")
-    r = requests.post(
-        "https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {GROQ_API_KEY}", "Content-Type": "application/json"},
-        json={
-            "model": "llama-3.1-8b-instant",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.4,
-        },
-        timeout=20,
+    completion = groq_client.chat.completions.create(
+        model="llama-3.1-8b-instant",
+        messages=[{"role": "user", "content": prompt}],
+        temperature=0.4,
     )
-    r.raise_for_status()
-    return r.json()["choices"][0]["message"]["content"]
+    return completion.choices[0].message.content
 
 
 def get_expert_advisory(crop, predicted_disease, confidence, weather_risk, district="Pune"):

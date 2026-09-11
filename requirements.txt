@@ -9,3 +9,4 @@ uvicorn
 dotenv
 python-multipart
 Pillow
+groq
