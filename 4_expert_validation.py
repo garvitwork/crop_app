@@ -38,7 +38,7 @@ def _try_groq(prompt):
     if not groq_client:
         raise Exception("GROQ_API_KEY is not set in environment")
     completion = groq_client.chat.completions.create(
-        model="llama-3.1-8b-instant",
+        model="openai/gpt-oss-20b",
         messages=[{"role": "user", "content": prompt}],
         temperature=0.4,
     )
@@ -51,13 +51,13 @@ def get_expert_advisory(crop, predicted_disease, confidence, weather_risk, distr
         confidence=confidence, weather_risk=weather_risk, district=district,
     )
     try:
-        return _try_gemini(prompt)
+        return _try_groq(prompt)
     except Exception as e:
-        print(f"Gemini failed ({e}), falling back to Groq...")
+        print(f"Groq failed ({e}), falling back to Gemini...")
         try:
-            return _try_groq(prompt)
+            return _try_gemini(prompt)
         except Exception as e2:
-            raise Exception(f"Both Gemini and Groq failed. Gemini: {e} | Groq: {e2}")
+            raise Exception(f"Both Groq and Gemini failed. Groq: {e} | Gemini: {e2}")
 
 
 if __name__ == "__main__":
