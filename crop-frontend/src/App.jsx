@@ -467,9 +467,11 @@ function App() {
               const cCol = confColor(pct, C);
               const risk = riskStyle(result.weather.pest_disease_risk, C);
               const alerts = result.sensor.alerts;
+              const detectedCrop = result.prediction.class.split(/[_ ]/)[0];
+              const mismatch = detectedCrop.toLowerCase() !== crop.toLowerCase();
               return (
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 22, animation: "fadeInUp .45s ease-out both" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, animation: "fadeInUp .45s ease-out both" }}>
                     <div style={{ position: "relative", width: 64, height: 64, flexShrink: 0 }}>
                       <svg width="64" height="64" style={{ transform: "rotate(-90deg)" }}>
                         <circle cx="32" cy="32" r="27" fill="none" stroke={C.line} strokeWidth="6" />
@@ -481,9 +483,15 @@ function App() {
                     </div>
                     <div>
                       <div style={{ color: C.sand, fontSize: 12.5 }}>Result</div>
-                      <div style={{ fontFamily: serif, fontSize: 23 }}>{crop} · {result.prediction.class.replace(/_/g, " ")}</div>
+                      <div style={{ fontFamily: serif, fontSize: 23 }}>{result.prediction.class.replace(/_/g, " ")}</div>
                     </div>
                   </div>
+
+                  {mismatch && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: `${C.rust}1a`, border: `1px solid ${C.rust}66`, color: C.rust, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 18 }}>
+                      ⚠️ You selected <b>{crop}</b>, but the photo looks like a <b>{detectedCrop}</b> leaf — advisory below uses the selected crop, double-check before applying treatment.
+                    </div>
+                  )}
 
                   <div style={{ display: "flex", gap: 10, marginBottom: 20, flexWrap: "wrap", animation: "fadeInUp .45s ease-out .1s both" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, background: `${risk.color}1a`, border: `1px solid ${risk.color}66`, color: risk.color, borderRadius: 20, padding: "6px 14px", fontSize: 13, fontWeight: 700, animation: "chipPulse 2.4s ease-in-out infinite" }}>
