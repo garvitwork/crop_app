@@ -1,4 +1,4 @@
-# CropGuard â€” Frontend
+# CropGuard Frontend
 
 ## 1. Problem Statement
 
