@@ -63,11 +63,11 @@ function parseAdvisory(raw) {
 
 const iconFor = (title) => {
   const t = title.toLowerCase();
-  if (t.includes("valid")) return "🔍";
-  if (t.includes("management") || t.includes("recommend")) return "🛠️";
-  if (t.includes("kvk") || t.includes("reference") || t.includes("lab")) return "🏢";
-  if (t.includes("marathi") || t.includes("सारांश")) return "🗣️";
-  return "📋";
+  if (t.includes("valid")) return "";
+  if (t.includes("management") || t.includes("recommend")) return "";
+  if (t.includes("kvk") || t.includes("reference") || t.includes("lab")) return "";
+  if (t.includes("marathi") || t.includes("सारांश")) return "";
+  return "";
 };
 
 const riskStyle = (risk, C) => {
