@@ -322,7 +322,35 @@ function App() {
       .then((r) => r.json())
       .then(setInsights)
       .catch(() => setInsights([]));
+    fetch(`${API}/recent-scans`)
+      .then((r) => r.json())
+      .then(setRecentScans)
+      .catch(() => {});
+    fetch(`${API}/districts-weather`)
+      .then((r) => r.json())
+      .then(setDistrictsData)
+      .catch(() => {});
   }, []);
+
+  // rotating crop word for the hero headline
+  const rotatingCrops = ["Tomato", "Potato", "Pepper", "Rice", "Wheat", "Cotton"];
+  const [cropWordIdx, setCropWordIdx] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setCropWordIdx((i) => (i + 1) % rotatingCrops.length), 2200);
+    return () => clearInterval(id);
+  }, []);
+
+  // mouse-follow spotlight on hero
+  const heroRef = useRef(null);
+  const onHeroMouseMove = (e) => {
+    if (!heroRef.current) return;
+    const rect = heroRef.current.getBoundingClientRect();
+    heroRef.current.style.setProperty("--mx", `${e.clientX - rect.left}px`);
+    heroRef.current.style.setProperty("--my", `${e.clientY - rect.top}px`);
+  };
+
+  const liveTotalScans = recentScans.length;
+  const liveHighRisk = districtsData.filter((d) => d.pest_disease_risk === "HIGH").length;
 
   const loadDashboard = () => {
     setDashLoading(true);
