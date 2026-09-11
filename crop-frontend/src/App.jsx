@@ -488,8 +488,9 @@ function App() {
                   </div>
 
                   {mismatch && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, background: `${C.rust}1a`, border: `1px solid ${C.rust}66`, color: C.rust, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 18 }}>
-                      ⚠️ You selected <b>{crop}</b>, but the photo looks like a <b>{detectedCrop}</b> leaf — advisory below uses the selected crop, double-check before applying treatment.
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: `${C.rust}1a`, border: `1px solid ${C.rust}66`, color: C.rust, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
+                      <span>⚠️</span>
+                      <span>You selected <b>{crop}</b>, but the photo looks like a <b>{detectedCrop}</b> leaf — advisory below uses the selected crop, double-check before applying treatment.</span>
                     </div>
                   )}
 
