@@ -20,12 +20,22 @@ AI-predicted issue: {predicted_disease} (confidence: {confidence:.2f})
 Current weather-based pest/disease risk: {weather_risk}
 District: {district}
 
-1. Validate if this diagnosis seems reasonable given the crop and risk level.
-2. Give a short, simple management recommendation (safe pesticide/cultural
-   practice, dosage caution).
-3. Mention if the farmer should refer to a local Krishi Vigyan Kendra / lab.
-Respond in English, then give a short summary in Marathi.
-Keep the whole answer under 150 words.
+Respond using EXACTLY this structure, with each heading on its own line
+followed by a short paragraph (no markdown, no asterisks, no numbering):
+
+Diagnosis Validation:
+<Is this diagnosis reasonable given the crop and risk level? 2-3 sentences.>
+
+Management Recommendation:
+<Simple, actionable treatment — safe pesticide/cultural practice, dosage caution. 2-3 sentences.>
+
+Local Support:
+<Whether the farmer should visit a local Krishi Vigyan Kendra or lab, and why. 1-2 sentences.>
+
+मराठी सारांश (Marathi Summary):
+<Short summary of all the above, in Marathi only.>
+
+Keep the whole answer under 150 words. Do not add any other headings or sections.
 """
 
 
