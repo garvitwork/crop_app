@@ -22,6 +22,9 @@ BATCH_SIZE = 96
 EPOCHS = 12
 MODEL_PATH = "crop_disease_model.h5"
 
+_model = None
+_class_names = None
+
 
 def load_data():
     train_ds = tf.keras.utils.image_dataset_from_directory(
@@ -62,9 +65,16 @@ def train():
     print("Model saved to", MODEL_PATH)
 
 
+def _get_model():
+    global _model, _class_names
+    if _model is None:
+        _model = tf.keras.models.load_model(MODEL_PATH)
+        _class_names = open("class_names.txt").read().splitlines()
+    return _model, _class_names
+
+
 def predict(image_path):
-    model = tf.keras.models.load_model(MODEL_PATH)
-    class_names = open("class_names.txt").read().splitlines()
+    model, class_names = _get_model()  # loads once, cached for all later calls
 
     img = tf.keras.utils.load_img(image_path, target_size=IMG_SIZE)
     img_array = tf.keras.utils.img_to_array(img)
