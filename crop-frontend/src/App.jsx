@@ -107,6 +107,7 @@ function App() {
   const [insights, setInsights] = useState([]);
 
   const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
   const scanRef = useRef(null);
   const howRef = useRef(null);
   const insightsRef = useRef(null);
@@ -276,7 +277,7 @@ function App() {
 
         {/* Phone-scanning-crop animation — click to upload */}
         <div
-          onClick={() => { scanRef.current.scrollIntoView({ behavior: "smooth" }); setTimeout(() => fileInputRef.current.click(), 450); }}
+          onClick={() => { scanRef.current.scrollIntoView({ behavior: "smooth" }); setTimeout(() => cameraInputRef.current.click(), 450); }}
           title="Click to upload a crop photo"
           style={{ ...S.glowBox, padding: 28, animation: "pulseGlow 3.2s ease-in-out infinite", cursor: "pointer", transition: "transform .15s" }}
           onMouseEnter={(e) => (e.currentTarget.style.transform = "scale(1.015)")}
@@ -413,7 +414,11 @@ function App() {
             <div style={{ fontWeight: 600, marginTop: 14 }}>{dragOver ? "Drop it here" : "Drag a photo here"}</div>
             <div style={{ color: C.sand, fontSize: 13.5, marginTop: 4 }}>or choose a file from your device</div>
             <input ref={fileInputRef} type="file" accept="image/*" onChange={(e) => setImage(e.target.files[0])} style={{ display: "none" }} id="fileInput" />
-            <label htmlFor="fileInput" className="btn-ghost" style={{ ...S.ghostBtn, display: "inline-block", marginTop: 16, cursor: "pointer" }}>Choose image</label>
+            <input ref={cameraInputRef} type="file" accept="image/*" capture="environment" onChange={(e) => setImage(e.target.files[0])} style={{ display: "none" }} id="cameraInput" />
+            <div style={{ display: "flex", gap: 10, justifyContent: "center", marginTop: 16, flexWrap: "wrap" }}>
+              <label htmlFor="cameraInput" className="btn-primary" style={{ ...S.primaryBtn, display: "inline-block", cursor: "pointer" }}>📷 Take Photo</label>
+              <label htmlFor="fileInput" className="btn-ghost" style={{ ...S.ghostBtn, display: "inline-block", cursor: "pointer" }}>Choose image</label>
+            </div>
 
             <div style={{ marginTop: 24, display: "flex", gap: 10, justifyContent: "center" }}>
               <select value={crop} onChange={(e) => setCrop(e.target.value)} style={{ background: C.bg, color: C.ivory, border: `1px solid ${C.line}`, padding: "9px 12px", borderRadius: 4, fontSize: 14 }}>
