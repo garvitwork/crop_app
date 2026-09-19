@@ -16,7 +16,13 @@ sensor_mod = import_module("5_pest_traps_sensor")
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-MIN_CONFIDENCE = 0.35  # below this, treat the image as not a valid crop/leaf photo
+MIN_CONFIDENCE = 0.55  # below this, treat the image as not a valid crop/leaf photo
+SUPPORTED_CROPS = {"Tomato", "Potato", "Pepper"}  # the only crops this model was trained on
+
+
+def _crop_prefix(class_name):
+    parts = [p for p in class_name.replace("__", "_").split("_") if p]
+    return parts[0] if parts else class_name
 
 SCAN_LOG = []          # in-memory log of real farmer submissions, most recent first
 MAX_LOG = 50
@@ -122,6 +128,14 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
             return JSONResponse(status_code=422, content={
                 "error": f"This doesn't look like a clear crop/leaf photo (confidence {prediction['confidence']*100:.0f}%). "
                          f"Please retake — good lighting, leaf filling the frame, no blur."
+            })
+
+        # 3) reject crops the model wasn't trained on (e.g. banana, mango) even if it forced a confident guess
+        detected_crop = _crop_prefix(prediction["class"])
+        if detected_crop not in SUPPORTED_CROPS:
+            return JSONResponse(status_code=422, content={
+                "error": f"This app only supports Tomato, Potato, and Pepper crops right now. "
+                         f"The photo doesn't match any of these — please upload a leaf from one of those three."
             })
 
         try:
