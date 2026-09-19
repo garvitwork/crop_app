@@ -107,7 +107,10 @@ def build_model(num_classes):
     x = data_augmentation(inputs)
     # IMPORTANT: MobileNetV2's ImageNet weights expect inputs scaled to [-1, 1],
     # not [0, 1]. Plain Rescaling(1/255) silently mismatches the pretrained weights.
-    x = layers.Lambda(tf.keras.applications.mobilenet_v2.preprocess_input, name="mnv2_preprocess")(x)
+    # Rescaling(scale, offset) does the exact same math as mobilenet_v2.preprocess_input
+    # (x/127.5 - 1, mapping [0,255] to [-1,1]) but is a built-in, fully serializable
+    # layer — unlike Lambda, which can't reliably save/reload an external function reference.
+    x = layers.Rescaling(scale=1.0 / 127.5, offset=-1.0, name="mnv2_preprocess")(x)
     x = base_model(x, training=False)
     x = layers.GlobalAveragePooling2D()(x)
     x = layers.BatchNormalization()(x)
