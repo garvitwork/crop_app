@@ -19,6 +19,15 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 MIN_CONFIDENCE = 0.45  # below this, reject as not a valid supported-crop leaf photo
 SUPPORTED_CROPS = {"Tomato", "Potato", "Pepper"}  # the only crops this model was trained on
 
+# specific other produce the general-purpose ImageNet model might name directly —
+# if it confidently recognizes one of these, it's a strong, specific signal that
+# overrides the specialized model's (possibly wrong) confident guess
+OTHER_CROP_KEYWORDS = [
+    "banana", "mango", "corn", "maize", "grape", "apple", "orange", "strawberry",
+    "cabbage", "cauliflower", "broccoli", "cucumber", "zucchini", "pumpkin", "squash",
+    "pineapple", "fig", "lemon", "pomegranate", "artichoke", "cardoon", "mushroom",
+]
+
 
 def _crop_prefix(class_name):
     parts = [p for p in class_name.replace("__", "_").split("_") if p]
@@ -129,6 +138,18 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
             return JSONResponse(status_code=422, content={
                 "error": f"This doesn't look like a plant or leaf photo — it looks more like '{gate_label.replace('_', ' ')}'. "
                          f"Please upload a clear photo of a crop leaf."
+            })
+
+        # 2b) if the general-purpose model specifically recognizes a different, named
+        # crop (banana, mango, grape, corn, etc.), reject immediately — this catches
+        # wrong-species photos that the specialized model would otherwise force into
+        # a Tomato/Potato/Pepper class with misleadingly high confidence.
+        gate_label_lower = gate_label.lower()
+        other_crop_hit = next((kw for kw in OTHER_CROP_KEYWORDS if kw in gate_label_lower), None)
+        if other_crop_hit:
+            return JSONResponse(status_code=422, content={
+                "error": f"This looks like a {gate_label.replace('_', ' ')} leaf, not Tomato, Potato, or Pepper. "
+                         f"This app only supports those three crops."
             })
 
         prediction = img_mod.predict(path)
