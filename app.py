@@ -121,16 +121,26 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
         except UnidentifiedImageError:
             return JSONResponse(status_code=422, content={"error": "This file isn't a valid image. Please upload a JPG/PNG photo."})
 
+        # 2) independent sanity gate: is this even plausibly a plant/leaf photo?
+        # Catches screenshots, documents, and unrelated objects that the specialized
+        # disease model would otherwise be forced to (mis)classify with false confidence.
+        is_plant, gate_label, gate_conf = img_mod.is_probably_plant(path)
+        if not is_plant:
+            return JSONResponse(status_code=422, content={
+                "error": f"This doesn't look like a plant or leaf photo — it looks more like '{gate_label.replace('_', ' ')}'. "
+                         f"Please upload a clear photo of a crop leaf."
+            })
+
         prediction = img_mod.predict(path)
 
-        # 2) reject images the model isn't confident are a crop/leaf at all
+        # 3) reject images the model isn't confident are a crop/leaf at all
         if prediction["confidence"] < MIN_CONFIDENCE:
             return JSONResponse(status_code=422, content={
                 "error": f"This doesn't look like a clear crop/leaf photo (confidence {prediction['confidence']*100:.0f}%). "
                          f"Please retake — good lighting, leaf filling the frame, no blur."
             })
 
-        # 3) reject crops the model wasn't trained on (e.g. banana, mango) even if it forced a confident guess
+        # 4) reject crops the model wasn't trained on (e.g. banana, mango) even if it forced a confident guess
         detected_crop = _crop_prefix(prediction["class"])
         if detected_crop not in SUPPORTED_CROPS:
             return JSONResponse(status_code=422, content={
