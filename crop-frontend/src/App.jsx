@@ -297,6 +297,7 @@ function App() {
   const [district, setDistrict] = useState("Pune");
   const [crop, setCrop] = useState("Tomato");
   const [result, setResult] = useState(null);
+  const [errorMsg, setErrorMsg] = useState(null);
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [modal, setModal] = useState(null);
@@ -400,6 +401,8 @@ function App() {
 
   const setImage = (f) => {
     if (!f) return;
+    setErrorMsg(null);
+    setResult(null);
     const img = new Image();
     const url = URL.createObjectURL(f);
     img.onload = () => {
@@ -428,6 +431,7 @@ function App() {
     if (!file) return showToast("Add a photo before analyzing");
     setLoading(true);
     setResult(null);
+    setErrorMsg(null);
     const formData = new FormData();
     formData.append("file", file);
     formData.append("district", district);
@@ -436,13 +440,13 @@ function App() {
       const res = await fetch(`${API}/analyze`, { method: "POST", body: formData });
       const data = await res.json();
       if (!res.ok || data.error) {
-        showToast(data.error || `Server error (${res.status}). Try again.`);
+        setErrorMsg(data.error || `Server error (${res.status}). Try again.`);
         setLoading(false);
         return;
       }
       setResult(data);
     } catch {
-      showToast("Backend not reachable — check server status");
+      setErrorMsg("Backend not reachable — check server status and try again.");
     }
     setLoading(false);
   };
@@ -1088,11 +1092,22 @@ function App() {
           </div>
 
           <div style={{ ...S.glowBox, padding: 30, textAlign: "left" }}>
-            {!result && !loading && (
+            {!result && !loading && !errorMsg && (
               <div style={{ textAlign: "center", color: C.sand, marginTop: 56 }}>
                 <div style={{ fontSize: 30, animation: "floatIcon 2.6s ease-in-out infinite" }}>🍃</div>
                 <div style={{ fontFamily: serif, fontSize: 19, color: C.ivory, margin: "12px 0 6px" }}>Waiting for a photo</div>
                 <div style={{ fontSize: 14 }}>The diagnosis, weather risk and advisory will appear here.</div>
+              </div>
+            )}
+            {!result && !loading && errorMsg && (
+              <div style={{ textAlign: "center", marginTop: 40, animation: "fadeInUp .4s ease-out both" }}>
+                <div style={{ fontSize: 40, marginBottom: 12 }}>⚠️</div>
+                <div style={{ fontFamily: serif, fontSize: 20, color: C.rust, marginBottom: 10 }}>Couldn't process this photo</div>
+                <div style={{
+                  background: `${C.rust}18`, border: `1px solid ${C.rust}66`, borderRadius: 8,
+                  padding: "14px 18px", color: C.ivory, fontSize: 14.5, lineHeight: 1.55, maxWidth: 420, margin: "0 auto 18px",
+                }}>{errorMsg}</div>
+                <button className="btn-ghost" style={S.ghostBtn} onClick={() => { setErrorMsg(null); fileInputRef.current && fileInputRef.current.click(); }}>Try another photo</button>
               </div>
             )}
             {loading && <div style={{ textAlign: "center", marginTop: 56, color: C.gold, fontFamily: serif, fontSize: 18, textShadow: `0 0 12px ${C.gold}66` }}>Analyzing image…</div>}
