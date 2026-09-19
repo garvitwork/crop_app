@@ -1137,16 +1137,9 @@ function App() {
                   </div>
 
                   {mismatch && (
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: `${C.rust}1a`, border: `1px solid ${C.rust}66`, color: C.rust, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: `${C.rust}1a`, border: `1px solid ${C.rust}66`, color: C.rust, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
                       <span>⚠️</span>
                       <span>You selected <b>{crop}</b>, but the photo looks like a <b>{detectedCrop}</b> leaf — advisory below uses the selected crop, double-check before applying treatment.</span>
-                    </div>
-                  )}
-
-                  {result.prediction.low_confidence && (
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 8, background: `${C.gold}1a`, border: `1px solid ${C.gold}66`, color: C.gold, borderRadius: 8, padding: "10px 14px", fontSize: 13, marginBottom: 18, lineHeight: 1.5 }}>
-                      <span>🔍</span>
-                      <span>Confidence is only {pct.toFixed(0)}% — the model isn't fully sure about this diagnosis. Treat this as a starting point, not a final answer, and consider a second photo or a local KVK check before spraying anything.</span>
                     </div>
                   )}
 

@@ -16,7 +16,7 @@ sensor_mod = import_module("5_pest_traps_sensor")
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-MIN_CONFIDENCE = 0.40  # below this, treat the image as not a valid crop/leaf photo
+MIN_CONFIDENCE = 0.45  # below this, reject as not a valid supported-crop leaf photo
 SUPPORTED_CROPS = {"Tomato", "Potato", "Pepper"}  # the only crops this model was trained on
 
 
@@ -133,15 +133,12 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
 
         prediction = img_mod.predict(path)
 
-        # 3) only reject near-random noise now — the plant-gate above already handles
-        # "is this even a leaf photo", so we no longer hard-block genuine leaf photos
-        # just because the disease model itself is moderately uncertain.
-        if prediction["confidence"] < 0.25:
+        # 3) reject images the model isn't confident are a genuine, supported crop leaf
+        if prediction["confidence"] < MIN_CONFIDENCE:
             return JSONResponse(status_code=422, content={
-                "error": f"The model can't confidently identify anything in this photo (confidence {prediction['confidence']*100:.0f}%). "
-                         f"Please retake — good lighting, leaf filling the frame, no blur."
+                "error": f"This doesn't look like a valid Tomato, Potato, or Pepper leaf photo (confidence {prediction['confidence']*100:.0f}%). "
+                         f"Please upload a clear, well-lit photo of one of these three crops."
             })
-        prediction["low_confidence"] = prediction["confidence"] < 0.55
 
         # 4) reject crops the model wasn't trained on (e.g. banana, mango) even if it forced a confident guess
         detected_crop = _crop_prefix(prediction["class"])
