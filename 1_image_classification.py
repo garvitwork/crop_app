@@ -17,10 +17,10 @@ import tensorflow as tf
 from tensorflow.keras import layers, models
 
 DATASET_DIR = "dataset/PlantVillage"      # path to kaggle dataset folder
-IMG_SIZE = (160, 160)
-BATCH_SIZE = 96
-EPOCHS = 12
-MODEL_PATH = "crop_disease_model.h5"
+IMG_SIZE = (224, 224)   # MobileNetV2's native ImageNet resolution — 160px was undersized and hurt accuracy
+BATCH_SIZE = 32          # smaller batch = more gradient updates per epoch, helps on a small dataset
+EPOCHS = 15
+MODEL_PATH = "crop_disease_model.keras"  # native Keras format — avoids HDF5 Lambda-serialization issues
 
 _model = None
 _class_names = None
@@ -71,32 +71,91 @@ def load_data():
     val_ds = tf.keras.utils.image_dataset_from_directory(
         DATASET_DIR, validation_split=0.2, subset="validation",
         seed=123, image_size=IMG_SIZE, batch_size=BATCH_SIZE)
-    return train_ds, val_ds, train_ds.class_names
+    class_names = train_ds.class_names  # must read before prefetch() wraps the dataset
+
+    # class weights — this dataset is small and almost certainly imbalanced across
+    # 15 classes (some crops have far more sub-classes/images than others). Without
+    # this, the model just learns to favor whichever classes have the most images.
+    counts = np.zeros(len(class_names))
+    for _, labels in train_ds.unbatch():
+        counts[int(labels.numpy())] += 1
+    total = counts.sum()
+    class_weight = {i: total / (len(class_names) * c) for i, c in enumerate(counts) if c > 0}
+    print("Class counts:", dict(zip(class_names, counts.astype(int))))
+
+    train_ds = train_ds.prefetch(tf.data.AUTOTUNE)
+    val_ds = val_ds.prefetch(tf.data.AUTOTUNE)
+    return train_ds, val_ds, class_names, class_weight
+
+
+# augmentation — makes the model robust to real-world photo variation
+# (kept moderate: too aggressive on a small dataset makes training unstable)
+data_augmentation = models.Sequential([
+    layers.RandomFlip("horizontal"),
+    layers.RandomRotation(0.1),
+    layers.RandomZoom(0.1),
+    layers.RandomContrast(0.1),
+])
 
 
 def build_model(num_classes):
     base_model = tf.keras.applications.MobileNetV2(
         input_shape=(*IMG_SIZE, 3), include_top=False, weights="imagenet")
-    base_model.trainable = False  # freeze pretrained layers
+    base_model.trainable = False  # frozen for phase 1
 
-    model = models.Sequential([
-        layers.Rescaling(1.0 / 255, input_shape=(*IMG_SIZE, 3)),
-        base_model,
-        layers.GlobalAveragePooling2D(),
-        layers.Dense(128, activation="relu"),
-        layers.Dropout(0.3),
-        layers.Dense(num_classes, activation="softmax"),
-    ])
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.0001),
+    inputs = layers.Input(shape=(*IMG_SIZE, 3))
+    x = data_augmentation(inputs)
+    # IMPORTANT: MobileNetV2's ImageNet weights expect inputs scaled to [-1, 1],
+    # not [0, 1]. Plain Rescaling(1/255) silently mismatches the pretrained weights.
+    x = layers.Lambda(tf.keras.applications.mobilenet_v2.preprocess_input, name="mnv2_preprocess")(x)
+    x = base_model(x, training=False)
+    x = layers.GlobalAveragePooling2D()(x)
+    x = layers.BatchNormalization()(x)
+    x = layers.Dense(256, activation="relu")(x)
+    x = layers.Dropout(0.4)(x)
+    outputs = layers.Dense(num_classes, activation="softmax")(x)
+
+    model = models.Model(inputs, outputs)
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=1e-3),
                   loss="sparse_categorical_crossentropy",
                   metrics=["accuracy"])
-    return model
+    return model, base_model
 
 
 def train():
-    train_ds, val_ds, class_names = load_data()
-    model = build_model(len(class_names))
-    model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS)
+    train_ds, val_ds, class_names, class_weight = load_data()
+    model, base_model = build_model(len(class_names))
+
+    print("Phase 1: training classifier head (base frozen)...")
+    model.fit(
+        train_ds, validation_data=val_ds, epochs=EPOCHS, class_weight=class_weight,
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6),
+        ],
+    )
+
+    # Phase 2: fine-tune more of the pretrained base at a low learning rate, with its
+    # own fresh LR schedule (reusing phase 1's decayed LR here would stall training).
+    print("Phase 2: fine-tuning top layers of MobileNetV2...")
+    base_model.trainable = True
+    for layer in base_model.layers[:-60]:  # unfreeze roughly the top third of the network
+        layer.trainable = False
+
+    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=3e-5),
+                  loss="sparse_categorical_crossentropy",
+                  metrics=["accuracy"])
+    model.fit(
+        train_ds, validation_data=val_ds, epochs=20, class_weight=class_weight,
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True),
+            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-7),
+        ],
+    )
+
+    val_loss, val_acc = model.evaluate(val_ds)
+    print(f"Final validation accuracy: {val_acc*100:.1f}%")
+
     model.save(MODEL_PATH)
     with open("class_names.txt", "w") as f:
         f.write("\n".join(class_names))
