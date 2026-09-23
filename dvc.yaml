@@ -1,0 +1,20 @@
+stages:
+  train_disease_classifier:
+    cmd: python 1_image_classification.py
+    deps:
+      - 1_image_classification.py
+      - dataset/PlantVillage
+    params:
+      - params.yaml:
+          - img_size
+          - batch_size
+          - phase1_epochs
+          - phase2_epochs
+          - phase1_lr
+          - phase2_lr
+    outs:
+      - crop_disease_model.keras
+      - class_names.txt
+    metrics:
+      - metrics.json:
+          cache: false
