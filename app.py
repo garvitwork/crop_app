@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 import mlflow
 import dagshub
 from dotenv import load_dotenv
-
+import dagshub.auth
 load_dotenv()
 
 img_mod = import_module("1_image_classification")
@@ -31,6 +31,9 @@ if DAGSHUB_TOKEN:
     os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_TOKEN
     os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
 try:
+    if DAGSHUB_TOKEN:
+        dagshub.auth.add_app_token(DAGSHUB_TOKEN)
+
     dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
     mlflow.set_experiment("cropguard_inference")
     TRACKING_ENABLED = True

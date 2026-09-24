@@ -20,7 +20,7 @@ import mlflow
 import mlflow.tensorflow
 import dagshub
 from dotenv import load_dotenv
-
+import dagshub.auth
 load_dotenv()
 
 # --- DagsHub / MLflow tracking setup (non-interactive, via env vars) ---
@@ -31,6 +31,9 @@ DAGSHUB_TOKEN = os.environ.get("DAGSHUB_TOKEN", "")
 if DAGSHUB_TOKEN:
     os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_TOKEN
     os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
+
+if DAGSHUB_TOKEN:
+    dagshub.auth.add_app_token(DAGSHUB_TOKEN)
 
 dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
 mlflow.tensorflow.autolog(disable=True)  # we log manually below for full control
