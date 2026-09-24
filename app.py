@@ -10,7 +10,7 @@ from PIL import Image, UnidentifiedImageError
 import mlflow
 import dagshub
 from dotenv import load_dotenv
-import dagshub.auth
+
 load_dotenv()
 
 img_mod = import_module("1_image_classification")
@@ -30,23 +30,30 @@ DAGSHUB_TOKEN = os.environ.get("DAGSHUB_TOKEN", "")
 if DAGSHUB_TOKEN:
     os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_TOKEN
     os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
-try:
-    if DAGSHUB_TOKEN:
-        dagshub.auth.add_app_token(DAGSHUB_TOKEN)
+TRACKING_ENABLED_FLAG = {"initialized": False, "enabled": False}
 
-    dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
-    mlflow.set_experiment("cropguard_inference")
-    TRACKING_ENABLED = True
-except Exception as e:
-    print(f"DagsHub tracking disabled (init failed): {e}")
-    TRACKING_ENABLED = False
+
+def _ensure_tracking():
+    """Lazy: connects to DagsHub/MLflow only on first real request, not at server
+    boot — keeps startup fast and light so Render's port scan doesn't time out."""
+    if TRACKING_ENABLED_FLAG["initialized"]:
+        return TRACKING_ENABLED_FLAG["enabled"]
+    try:
+        dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
+        mlflow.set_experiment("cropguard_inference")
+        TRACKING_ENABLED_FLAG["enabled"] = True
+    except Exception as e:
+        print(f"DagsHub tracking disabled (init failed): {e}")
+        TRACKING_ENABLED_FLAG["enabled"] = False
+    TRACKING_ENABLED_FLAG["initialized"] = True
+    return TRACKING_ENABLED_FLAG["enabled"]
 
 
 def log_analysis(status, crop, district, reason=None, prediction=None, weather=None,
                   advisory_provider=None, latency=None, gate_label=None):
     """Logs one /analyze request to MLflow — accepted or rejected — so every real
     scan is traceable on DagsHub, not just training runs."""
-    if not TRACKING_ENABLED:
+    if not _ensure_tracking():
         return
     try:
         with mlflow.start_run(run_name=f"scan_{datetime.utcnow().isoformat()}"):

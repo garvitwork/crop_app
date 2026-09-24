@@ -20,7 +20,7 @@ import mlflow
 import mlflow.tensorflow
 import dagshub
 from dotenv import load_dotenv
-import dagshub.auth
+
 load_dotenv()
 
 # --- DagsHub / MLflow tracking setup (non-interactive, via env vars) ---
@@ -32,11 +32,17 @@ if DAGSHUB_TOKEN:
     os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_TOKEN
     os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
 
-if DAGSHUB_TOKEN:
-    dagshub.auth.add_app_token(DAGSHUB_TOKEN)
+_dagshub_initialized = False
 
-dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
-mlflow.tensorflow.autolog(disable=True)  # we log manually below for full control
+
+def _ensure_dagshub():
+    """Lazy: only connects to DagsHub/MLflow when actually training or logging —
+    never at import time, so the FastAPI server boots fast and light on RAM."""
+    global _dagshub_initialized
+    if not _dagshub_initialized:
+        dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
+        mlflow.tensorflow.autolog(disable=True)
+        _dagshub_initialized = True
 
 DATASET_DIR = "dataset/PlantVillage"      # path to kaggle dataset folder
 IMG_SIZE = (224, 224)   # MobileNetV2's native ImageNet resolution — 160px was undersized and hurt accuracy
@@ -124,6 +130,7 @@ class MlflowEpochLogger(tf.keras.callbacks.Callback):
 
 
 def train():
+    _ensure_dagshub()
     with mlflow.start_run(run_name="crop_disease_training"):
         mlflow.log_params({
             "img_size": IMG_SIZE, "batch_size": BATCH_SIZE,
