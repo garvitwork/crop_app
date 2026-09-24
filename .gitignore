@@ -8,3 +8,5 @@ crop-frontend/dist/
 
 # Sensitive data
 .env
+/crop_disease_model.keras
+/class_names.txt

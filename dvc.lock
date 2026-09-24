@@ -1,0 +1,37 @@
+schema: '2.0'
+stages:
+  train_disease_classifier:
+    cmd: python 1_image_classification.py
+    deps:
+    - path: 1_image_classification.py
+      hash: md5
+      md5: a4d5b9b1574e9e2ac36bb8f7e7901937
+      size: 10929
+    - path: dataset/PlantVillage
+      hash: md5
+      md5: e7955131fd4f4bb40931eb2fba7b326a.dir
+      size: 39008091
+      nfiles: 2237
+    params:
+      params.yaml:
+        batch_size: 32
+        img_size:
+        - 224
+        - 224
+        phase1_epochs: 15
+        phase1_lr: 0.001
+        phase2_epochs: 20
+        phase2_lr: 3e-05
+    outs:
+    - path: class_names.txt
+      hash: md5
+      md5: 0021783df5bb2c125ae4b3dda48c17e0
+      size: 375
+    - path: crop_disease_model.keras
+      hash: md5
+      md5: 2e13d03952f27a3a42ce4fcd0b0b2619
+      size: 29359295
+    - path: metrics.json
+      hash: md5
+      md5: 097b965efeaa6a5399856cb56d62b602
+      size: 89
