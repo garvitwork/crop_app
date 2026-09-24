@@ -18,3 +18,10 @@ stages:
     metrics:
       - metrics.json:
           cache: false
+
+  generate_hotspot_map:
+    cmd: python 3_geo_hotspot.py
+    deps:
+      - 3_geo_hotspot.py
+    outs:
+      - hotspot_map.html

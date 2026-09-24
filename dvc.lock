@@ -35,3 +35,15 @@ stages:
       hash: md5
       md5: 097b965efeaa6a5399856cb56d62b602
       size: 89
+  generate_hotspot_map:
+    cmd: python 3_geo_hotspot.py
+    deps:
+    - path: 3_geo_hotspot.py
+      hash: md5
+      md5: ad0f25b75a2a5fb88ccdc0bba9e6e8bb
+      size: 3078
+    outs:
+    - path: hotspot_map.html
+      hash: md5
+      md5: d1017f2f2ffce69dee13f6f5a803fc2c
+      size: 27329

@@ -10,3 +10,4 @@ crop-frontend/dist/
 .env
 /crop_disease_model.keras
 /class_names.txt
+/hotspot_map.html
