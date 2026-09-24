@@ -19,6 +19,17 @@ const sans = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif";
 const API = "https://crop-app-jhi8.onrender.com";
 const DASHBOARD_REFRESH_MS = 30000;
 
+// Fire-and-forget: logs a frontend user action to the backend, which records it
+// in MLflow/DagsHub. Never blocks or throws — tracking must not affect UX.
+function track(event, detail = "") {
+  try {
+    const fd = new FormData();
+    fd.append("event", event);
+    fd.append("detail", String(detail));
+    fetch(`${API}/track-event`, { method: "POST", body: fd }).catch(() => {});
+  } catch {}
+}
+
 const threats = [
   { crop: "Tomato", name: "Early Blight", desc: "Warm, humid conditions and prolonged leaf wetness invite this fungus.", prevent: "Remove infected leaves, avoid overhead watering, apply Mancozeb 2g/L as a preventive spray, rotate crops yearly.", accent: C.rust },
   { crop: "Rice", name: "Blast", desc: "High humidity, dense canopy and favourable weather raise pressure.", prevent: "Use resistant varieties, avoid excess nitrogen, apply Tricyclazole at first symptom, keep fields drained.", accent: C.gold },
@@ -389,6 +400,7 @@ function App() {
   const showToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
   const [waking, setWaking] = useState(false);
   const wakeApi = async () => {
+    track("wake_api_click");
     setWaking(true);
     try {
       await fetch(`${API}/health`);
@@ -401,6 +413,7 @@ function App() {
 
   const setImage = (f) => {
     if (!f) return;
+    track("image_selected", f.name);
     setErrorMsg(null);
     setResult(null);
     const img = new Image();
@@ -429,6 +442,7 @@ function App() {
 
   const analyze = async () => {
     if (!file) return showToast("Add a photo before analyzing");
+    track("analyze_click", `${crop}|${district}`);
     setLoading(true);
     setResult(null);
     setErrorMsg(null);
@@ -641,7 +655,7 @@ function App() {
           <span className="nav-link" style={S.navLink} onClick={() => scanRef.current.scrollIntoView({ behavior: "smooth" })}>Scan</span>
           <span className="nav-link" style={S.navLink} onClick={() => howRef.current.scrollIntoView({ behavior: "smooth" })}>How it works</span>
           <span className="nav-link" style={S.navLink} onClick={() => insightsRef.current.scrollIntoView({ behavior: "smooth" })}>Insights</span>
-          <span className="nav-link" style={S.navLink} onClick={() => setView(view === "dashboard" ? "farmer" : "dashboard")}>{view === "dashboard" ? "Farmer view" : "Officials Dashboard"}</span>
+          <span className="nav-link" style={S.navLink} onClick={() => { const v = view === "dashboard" ? "farmer" : "dashboard"; track("view_switch", v); setView(v); }}>{view === "dashboard" ? "Farmer view" : "Officials Dashboard"}</span>
         </div>
         <div style={{ display: "flex", gap: 10 }}>
           <button className="btn-ghost" style={S.ghostBtn} onClick={wakeApi} disabled={waking}>{waking ? "Waking…" : "Wake API"}</button>
@@ -756,7 +770,7 @@ function App() {
               const hotspot = insights.find((h) => h.region === d.district);
               return (
                 <Reveal key={d.district} delay={i * 0.05}>
-                  <div className="district-card" onClick={() => setDistrictModal(d)} style={{ ...S.glowBox, padding: 18, borderLeft: `3px solid ${risk.color}` }}>
+                  <div className="district-card" onClick={() => { track("district_card_click", d.district); setDistrictModal(d); }} style={{ ...S.glowBox, padding: 18, borderLeft: `3px solid ${risk.color}` }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
                       <div style={{ fontFamily: serif, fontSize: 19, marginBottom: 6 }}>{d.district}</div>
                       {hotspot && <div style={{ fontSize: 11.5, color: C.sand }}>{hotspot.pct}% activity</div>}
@@ -850,7 +864,7 @@ function App() {
               <div style={S.kicker}>Recent field submissions</div>
               <div style={{ ...S.body, marginBottom: 0 }}>Live feed of actual farmer uploads processed by the system — crop, AI diagnosis, confidence, and local risk at the moment of submission.</div>
             </div>
-            <button className="btn-ghost" style={{ ...S.ghostBtn, padding: "9px 16px", fontSize: 13 }} onClick={() => downloadCSV(recentScans, "cropguard_recent_scans.csv")} disabled={recentScans.length === 0}>
+            <button className="btn-ghost" style={{ ...S.ghostBtn, padding: "9px 16px", fontSize: 13 }} onClick={() => { track("export_csv_click", recentScans.length); downloadCSV(recentScans, "cropguard_recent_scans.csv"); }} disabled={recentScans.length === 0}>
               Export CSV
             </button>
           </div>

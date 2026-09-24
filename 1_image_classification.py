@@ -12,9 +12,28 @@ Set DATASET_DIR below to that path.
 """
 
 import os
+import json
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers, models
+import mlflow
+import mlflow.tensorflow
+import dagshub
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# --- DagsHub / MLflow tracking setup (non-interactive, via env vars) ---
+DAGSHUB_REPO_OWNER = os.environ.get("DAGSHUB_REPO_OWNER", "garvitwork")
+DAGSHUB_REPO_NAME = os.environ.get("DAGSHUB_REPO_NAME", "crop_app")
+DAGSHUB_TOKEN = os.environ.get("DAGSHUB_TOKEN", "")
+
+if DAGSHUB_TOKEN:
+    os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_TOKEN
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
+
+dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
+mlflow.tensorflow.autolog(disable=True)  # we log manually below for full control
 
 DATASET_DIR = "dataset/PlantVillage"      # path to kaggle dataset folder
 IMG_SIZE = (224, 224)   # MobileNetV2's native ImageNet resolution — 160px was undersized and hurt accuracy
@@ -125,44 +144,79 @@ def build_model(num_classes):
     return model, base_model
 
 
+class MlflowEpochLogger(tf.keras.callbacks.Callback):
+    """Logs every epoch's metrics to the active MLflow run, tagged by phase."""
+    def __init__(self, phase):
+        super().__init__()
+        self.phase = phase
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        for k, v in logs.items():
+            mlflow.log_metric(f"{self.phase}_{k}", float(v), step=epoch)
+
+
 def train():
-    train_ds, val_ds, class_names, class_weight = load_data()
-    model, base_model = build_model(len(class_names))
+    with mlflow.start_run(run_name="crop_disease_training"):
+        mlflow.log_params({
+            "img_size": IMG_SIZE, "batch_size": BATCH_SIZE,
+            "phase1_epochs": EPOCHS, "phase2_epochs": 20,
+            "phase1_lr": 1e-3, "phase2_lr": 3e-5,
+            "unfrozen_layers": 60, "dropout": 0.4, "dense_units": 256,
+            "dataset_dir": DATASET_DIR,
+        })
 
-    print("Phase 1: training classifier head (base frozen)...")
-    model.fit(
-        train_ds, validation_data=val_ds, epochs=EPOCHS, class_weight=class_weight,
-        callbacks=[
-            tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True),
-            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6),
-        ],
-    )
+        train_ds, val_ds, class_names, class_weight = load_data()
+        mlflow.log_param("num_classes", len(class_names))
+        mlflow.log_dict({"class_names": class_names, "class_weight": class_weight}, "class_info.json")
 
-    # Phase 2: fine-tune more of the pretrained base at a low learning rate, with its
-    # own fresh LR schedule (reusing phase 1's decayed LR here would stall training).
-    print("Phase 2: fine-tuning top layers of MobileNetV2...")
-    base_model.trainable = True
-    for layer in base_model.layers[:-60]:  # unfreeze roughly the top third of the network
-        layer.trainable = False
+        model, base_model = build_model(len(class_names))
 
-    model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=3e-5),
-                  loss="sparse_categorical_crossentropy",
-                  metrics=["accuracy"])
-    model.fit(
-        train_ds, validation_data=val_ds, epochs=20, class_weight=class_weight,
-        callbacks=[
-            tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True),
-            tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-7),
-        ],
-    )
+        print("Phase 1: training classifier head (base frozen)...")
+        model.fit(
+            train_ds, validation_data=val_ds, epochs=EPOCHS, class_weight=class_weight,
+            callbacks=[
+                tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True),
+                tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-6),
+                MlflowEpochLogger("phase1"),
+            ],
+        )
 
-    val_loss, val_acc = model.evaluate(val_ds)
-    print(f"Final validation accuracy: {val_acc*100:.1f}%")
+        # Phase 2: fine-tune more of the pretrained base at a low learning rate, with its
+        # own fresh LR schedule (reusing phase 1's decayed LR here would stall training).
+        print("Phase 2: fine-tuning top layers of MobileNetV2...")
+        base_model.trainable = True
+        for layer in base_model.layers[:-60]:  # unfreeze roughly the top third of the network
+            layer.trainable = False
 
-    model.save(MODEL_PATH)
-    with open("class_names.txt", "w") as f:
-        f.write("\n".join(class_names))
-    print("Model saved to", MODEL_PATH)
+        model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=3e-5),
+                      loss="sparse_categorical_crossentropy",
+                      metrics=["accuracy"])
+        model.fit(
+            train_ds, validation_data=val_ds, epochs=20, class_weight=class_weight,
+            callbacks=[
+                tf.keras.callbacks.EarlyStopping(monitor="val_accuracy", patience=6, restore_best_weights=True),
+                tf.keras.callbacks.ReduceLROnPlateau(monitor="val_loss", factor=0.5, patience=3, min_lr=1e-7),
+                MlflowEpochLogger("phase2"),
+            ],
+        )
+
+        val_loss, val_acc = model.evaluate(val_ds)
+        print(f"Final validation accuracy: {val_acc*100:.1f}%")
+        mlflow.log_metric("final_val_accuracy", float(val_acc))
+        mlflow.log_metric("final_val_loss", float(val_loss))
+
+        model.save(MODEL_PATH)
+        with open("class_names.txt", "w") as f:
+            f.write("\n".join(class_names))
+        print("Model saved to", MODEL_PATH)
+
+        # log artifacts + metrics.json for DVC to pick up as a tracked metric file
+        mlflow.log_artifact(MODEL_PATH)
+        mlflow.log_artifact("class_names.txt")
+        with open("metrics.json", "w") as f:
+            json.dump({"final_val_accuracy": float(val_acc), "final_val_loss": float(val_loss)}, f, indent=2)
+        mlflow.log_artifact("metrics.json")
 
 
 def _get_model():

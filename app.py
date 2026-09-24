@@ -2,10 +2,16 @@ from fastapi import FastAPI, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import shutil
+import time
 from datetime import datetime, timedelta
 from collections import defaultdict
 from importlib import import_module
 from PIL import Image, UnidentifiedImageError
+import mlflow
+import dagshub
+from dotenv import load_dotenv
+
+load_dotenv()
 
 img_mod = import_module("1_image_classification")
 weather_mod = import_module("2_weather_api")
@@ -16,17 +22,55 @@ sensor_mod = import_module("5_pest_traps_sensor")
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
+# --- DagsHub / MLflow tracking for every live /analyze request ---
+import os
+DAGSHUB_REPO_OWNER = os.environ.get("DAGSHUB_REPO_OWNER", "garvitwork")
+DAGSHUB_REPO_NAME = os.environ.get("DAGSHUB_REPO_NAME", "crop_app")
+DAGSHUB_TOKEN = os.environ.get("DAGSHUB_TOKEN", "")
+if DAGSHUB_TOKEN:
+    os.environ["MLFLOW_TRACKING_USERNAME"] = DAGSHUB_TOKEN
+    os.environ["MLFLOW_TRACKING_PASSWORD"] = DAGSHUB_TOKEN
+try:
+    dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
+    mlflow.set_experiment("cropguard_inference")
+    TRACKING_ENABLED = True
+except Exception as e:
+    print(f"DagsHub tracking disabled (init failed): {e}")
+    TRACKING_ENABLED = False
+
+
+def log_analysis(status, crop, district, reason=None, prediction=None, weather=None,
+                  advisory_provider=None, latency=None, gate_label=None):
+    """Logs one /analyze request to MLflow — accepted or rejected — so every real
+    scan is traceable on DagsHub, not just training runs."""
+    if not TRACKING_ENABLED:
+        return
+    try:
+        with mlflow.start_run(run_name=f"scan_{datetime.utcnow().isoformat()}"):
+            mlflow.log_param("crop_selected", crop)
+            mlflow.log_param("district", district)
+            mlflow.log_param("status", status)  # accepted / rejected
+            if reason:
+                mlflow.log_param("reject_reason", reason)
+            if gate_label:
+                mlflow.log_param("plant_gate_label", gate_label)
+            if prediction:
+                mlflow.log_param("predicted_class", prediction["class"])
+                mlflow.log_metric("confidence", prediction["confidence"])
+            if weather:
+                mlflow.log_param("weather_risk", weather["pest_disease_risk"])
+                mlflow.log_metric("temperature_C", weather["temperature_C"])
+                mlflow.log_metric("humidity_percent", weather["humidity_percent"])
+            if advisory_provider:
+                mlflow.log_param("advisory_provider", advisory_provider)
+            if latency is not None:
+                mlflow.log_metric("latency_seconds", latency)
+    except Exception as e:
+        print(f"MLflow logging failed (non-fatal): {e}")
+
+
 MIN_CONFIDENCE = 0.45  # below this, reject as not a valid supported-crop leaf photo
 SUPPORTED_CROPS = {"Tomato", "Potato", "Pepper"}  # the only crops this model was trained on
-
-# specific other produce the general-purpose ImageNet model might name directly —
-# if it confidently recognizes one of these, it's a strong, specific signal that
-# overrides the specialized model's (possibly wrong) confident guess
-OTHER_CROP_KEYWORDS = [
-    "banana", "mango", "corn", "maize", "grape", "apple", "orange", "strawberry",
-    "cabbage", "cauliflower", "broccoli", "cucumber", "zucchini", "pumpkin", "squash",
-    "pineapple", "fig", "lemon", "pomegranate", "artichoke", "cardoon", "mushroom",
-]
 
 
 def _crop_prefix(class_name):
@@ -119,6 +163,7 @@ async def clusters():
 @app.post("/analyze")
 async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Form("Tomato")):
     path = f"temp_{file.filename}"
+    start = time.time()
     try:
         with open(path, "wb") as f:
             shutil.copyfileobj(file.file, f)
@@ -128,34 +173,24 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
             with Image.open(path) as im:
                 im.verify()
         except UnidentifiedImageError:
+            log_analysis("rejected", crop, district, reason="invalid_image_file", latency=time.time() - start)
             return JSONResponse(status_code=422, content={"error": "This file isn't a valid image. Please upload a JPG/PNG photo."})
 
         # 2) independent sanity gate: is this even plausibly a plant/leaf photo?
-        # Catches screenshots, documents, and unrelated objects that the specialized
-        # disease model would otherwise be forced to (mis)classify with false confidence.
         is_plant, gate_label, gate_conf = img_mod.is_probably_plant(path)
         if not is_plant:
+            log_analysis("rejected", crop, district, reason="not_a_plant", gate_label=gate_label, latency=time.time() - start)
             return JSONResponse(status_code=422, content={
                 "error": f"This doesn't look like a plant or leaf photo — it looks more like '{gate_label.replace('_', ' ')}'. "
                          f"Please upload a clear photo of a crop leaf."
-            })
-
-        # 2b) if the general-purpose model specifically recognizes a different, named
-        # crop (banana, mango, grape, corn, etc.), reject immediately — this catches
-        # wrong-species photos that the specialized model would otherwise force into
-        # a Tomato/Potato/Pepper class with misleadingly high confidence.
-        gate_label_lower = gate_label.lower()
-        other_crop_hit = next((kw for kw in OTHER_CROP_KEYWORDS if kw in gate_label_lower), None)
-        if other_crop_hit:
-            return JSONResponse(status_code=422, content={
-                "error": f"This looks like a {gate_label.replace('_', ' ')} leaf, not Tomato, Potato, or Pepper. "
-                         f"This app only supports those three crops."
             })
 
         prediction = img_mod.predict(path)
 
         # 3) reject images the model isn't confident are a genuine, supported crop leaf
         if prediction["confidence"] < MIN_CONFIDENCE:
+            log_analysis("rejected", crop, district, reason="low_confidence", prediction=prediction,
+                         gate_label=gate_label, latency=time.time() - start)
             return JSONResponse(status_code=422, content={
                 "error": f"This doesn't look like a valid Tomato, Potato, or Pepper leaf photo (confidence {prediction['confidence']*100:.0f}%). "
                          f"Please upload a clear, well-lit photo of one of these three crops."
@@ -164,6 +199,8 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
         # 4) reject crops the model wasn't trained on (e.g. banana, mango) even if it forced a confident guess
         detected_crop = _crop_prefix(prediction["class"])
         if detected_crop not in SUPPORTED_CROPS:
+            log_analysis("rejected", crop, district, reason="unsupported_crop", prediction=prediction,
+                         gate_label=gate_label, latency=time.time() - start)
             return JSONResponse(status_code=422, content={
                 "error": f"This app only supports Tomato, Potato, and Pepper crops right now. "
                          f"The photo doesn't match any of these — please upload a leaf from one of those three."
@@ -172,9 +209,10 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
         try:
             weather = weather_mod.compute_risk(weather_mod.get_weather(district))
         except Exception as e:
+            log_analysis("rejected", crop, district, reason="weather_unavailable", prediction=prediction, latency=time.time() - start)
             return JSONResponse(status_code=502, content={"error": f"Weather service unavailable: {e}"})
 
-        advisory = expert_mod.get_expert_advisory(
+        advisory, provider = expert_mod.get_expert_advisory(
             crop=crop, predicted_disease=prediction["class"],
             confidence=prediction["confidence"], weather_risk=weather["pest_disease_risk"],
             district=district)
@@ -191,7 +229,11 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
         })
         del SCAN_LOG[MAX_LOG:]
 
+        log_analysis("accepted", crop, district, prediction=prediction, weather=weather,
+                     advisory_provider=provider, latency=time.time() - start)
+
         return {"prediction": prediction, "weather": weather, "advisory": advisory, "sensor": sensor}
 
     except Exception as e:
+        log_analysis("error", crop, district, reason=str(e), latency=time.time() - start)
         return JSONResponse(status_code=500, content={"error": str(e)})

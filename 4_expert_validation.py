@@ -61,19 +61,19 @@ def get_expert_advisory(crop, predicted_disease, confidence, weather_risk, distr
         confidence=confidence, weather_risk=weather_risk, district=district,
     )
     try:
-        return _try_groq(prompt)
+        return _try_groq(prompt), "groq"
     except Exception as e:
         print(f"Groq failed ({e}), falling back to Gemini...")
         try:
-            return _try_gemini(prompt)
+            return _try_gemini(prompt), "gemini"
         except Exception as e2:
             raise Exception(f"Both Groq and Gemini failed. Groq: {e} | Gemini: {e2}")
 
 
 if __name__ == "__main__":
-    advisory = get_expert_advisory(
+    advisory, provider = get_expert_advisory(
         crop="Tomato", predicted_disease="Late Blight",
         confidence=0.87, weather_risk="HIGH", district="Pune",
     )
-    print("Expert Validated Advisory:\n")
+    print(f"Expert Validated Advisory (via {provider}):\n")
     print(advisory)

@@ -10,3 +10,6 @@ dotenv
 python-multipart
 Pillow
 groq
+mlflow
+dagshub
+dvc
