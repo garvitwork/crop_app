@@ -176,21 +176,16 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
             log_analysis("rejected", crop, district, reason="invalid_image_file", latency=time.time() - start)
             return JSONResponse(status_code=422, content={"error": "This file isn't a valid image. Please upload a JPG/PNG photo."})
 
-        # 2) independent sanity gate: is this even plausibly a plant/leaf photo?
-        is_plant, gate_label, gate_conf = img_mod.is_probably_plant(path)
-        if not is_plant:
-            log_analysis("rejected", crop, district, reason="not_a_plant", gate_label=gate_label, latency=time.time() - start)
-            return JSONResponse(status_code=422, content={
-                "error": f"This doesn't look like a plant or leaf photo — it looks more like '{gate_label.replace('_', ' ')}'. "
-                         f"Please upload a clear photo of a crop leaf."
-            })
-
         prediction = img_mod.predict(path)
+
+        # (plant-sanity gate removed — the trained disease model's own confidence,
+        # checked below, is more reliable for these specific crop leaves than a
+        # generic ImageNet gate, which was misreading close-up leaves as textures.)
 
         # 3) reject images the model isn't confident are a genuine, supported crop leaf
         if prediction["confidence"] < MIN_CONFIDENCE:
             log_analysis("rejected", crop, district, reason="low_confidence", prediction=prediction,
-                         gate_label=gate_label, latency=time.time() - start)
+                         latency=time.time() - start)
             return JSONResponse(status_code=422, content={
                 "error": f"This doesn't look like a valid Tomato, Potato, or Pepper leaf photo (confidence {prediction['confidence']*100:.0f}%). "
                          f"Please upload a clear, well-lit photo of one of these three crops."
@@ -200,7 +195,7 @@ async def analyze(file: UploadFile, district: str = Form("Pune"), crop: str = Fo
         detected_crop = _crop_prefix(prediction["class"])
         if detected_crop not in SUPPORTED_CROPS:
             log_analysis("rejected", crop, district, reason="unsupported_crop", prediction=prediction,
-                         gate_label=gate_label, latency=time.time() - start)
+                         latency=time.time() - start)
             return JSONResponse(status_code=422, content={
                 "error": f"This app only supports Tomato, Potato, and Pepper crops right now. "
                          f"The photo doesn't match any of these — please upload a leaf from one of those three."

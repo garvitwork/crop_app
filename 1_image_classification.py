@@ -44,43 +44,7 @@ MODEL_PATH = "crop_disease_model.keras"  # native Keras format — avoids HDF5 L
 _model = None
 _class_names = None
 
-_gate_model = None  # separate general-purpose ImageNet model, used only as a sanity check
-
-# ImageNet label keywords that indicate the photo plausibly shows plant/vegetation material.
-# Screenshots, documents, random objects, people, etc. won't match any of these.
-PLANT_KEYWORDS = [
-    "leaf", "plant", "veget", "fruit", "flower", "tree", "corn", "cabbage", "broccoli",
-    "cauliflower", "zucchini", "artichoke", "mushroom", "banana", "pineapple", "strawberry",
-    "orange", "lemon", "fig", "pot,", "head_cabbage", "custard_apple", "pomegranate", "acorn",
-    "rapeseed", "daisy", "buckeye", "hip", "pepper", "cucumber", "squash", "cardoon",
-]
-
-
-def _get_gate_model():
-    global _gate_model
-    if _gate_model is None:
-        _gate_model = tf.keras.applications.MobileNetV2(weights="imagenet")
-    return _gate_model
-
-
-def is_probably_plant(image_path, top_k=5):
-    """Independent sanity check using a generic ImageNet classifier — is this photo
-    plausibly plant/vegetation material at all, before we run the specialized disease model?
-    This catches screenshots, documents, unrelated objects etc. that the specialized
-    model would otherwise be forced to classify into one of its trained disease classes."""
-    model = _get_gate_model()
-    img = tf.keras.utils.load_img(image_path, target_size=(224, 224))
-    arr = tf.keras.utils.img_to_array(img)
-    arr = tf.keras.applications.mobilenet_v2.preprocess_input(arr)
-    arr = tf.expand_dims(arr, 0)
-    preds = model.predict(arr, verbose=0)
-    decoded = tf.keras.applications.mobilenet_v2.decode_predictions(preds, top=top_k)[0]
-
-    for (_, label, conf) in decoded:
-        label_lower = label.lower()
-        if any(kw in label_lower for kw in PLANT_KEYWORDS):
-            return True, label, float(conf)
-    return False, decoded[0][1], float(decoded[0][2])
+_gate_model = None  # (unused now — plant-sanity gate removed, kept only if re-enabled later)
 
 
 def load_data():
