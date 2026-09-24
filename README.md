@@ -185,3 +185,26 @@ Hosted on Render.com as a free web service:
 - Build command: `pip install -r requirements.txt`
 - Start command: `uvicorn app:app --host 0.0.0.0 --port $PORT`
 - Environment variables set in Render's dashboard: `GEMINI_API_KEY`, `GROQ_API_KEY`, `PYTHON_VERSION`
+
+
+```mermaid
+flowchart TD
+    A[dataset/PlantVillage] --> B[train_disease_classifier]
+    B --> C[crop_disease_model.keras]
+    B --> D[class_names.txt]
+    B --> E[metrics.json]
+
+    F[3_geo_hotspot.py] --> G[hotspot_map.html]
+
+    subgraph Live /analyze request
+    H[User uploads photo] --> I[1_image_classification.py: predict]
+    C --> I
+    D --> I
+    I --> J[2_weather_api.py: get risk]
+    I --> K[4_expert_validation.py: AI advisory]
+    I --> L[5_pest_traps_sensor.py: sensor reading]
+    J --> M[Response to frontend]
+    K --> M
+    L --> M
+    end
+```
