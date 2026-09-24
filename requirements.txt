@@ -13,3 +13,4 @@ groq
 mlflow
 dagshub
 dvc
+dvc-s3
