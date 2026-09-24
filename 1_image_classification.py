@@ -19,6 +19,7 @@ from tensorflow.keras import layers, models
 import mlflow
 import mlflow.tensorflow
 import dagshub
+import dagshub.auth
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -40,6 +41,8 @@ def _ensure_dagshub():
     never at import time, so the FastAPI server boots fast and light on RAM."""
     global _dagshub_initialized
     if not _dagshub_initialized:
+        if DAGSHUB_TOKEN:
+            dagshub.auth.add_app_token(DAGSHUB_TOKEN)
         dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
         mlflow.tensorflow.autolog(disable=True)
         _dagshub_initialized = True

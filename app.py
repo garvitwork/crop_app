@@ -9,6 +9,7 @@ from importlib import import_module
 from PIL import Image, UnidentifiedImageError
 import mlflow
 import dagshub
+import dagshub.auth
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -39,6 +40,8 @@ def _ensure_tracking():
     if TRACKING_ENABLED_FLAG["initialized"]:
         return TRACKING_ENABLED_FLAG["enabled"]
     try:
+        if DAGSHUB_TOKEN:
+            dagshub.auth.add_app_token(DAGSHUB_TOKEN)
         dagshub.init(repo_owner=DAGSHUB_REPO_OWNER, repo_name=DAGSHUB_REPO_NAME, mlflow=True)
         mlflow.set_experiment("cropguard_inference")
         TRACKING_ENABLED_FLAG["enabled"] = True
@@ -100,6 +103,22 @@ RISK_SCORE = {"LOW": 0, "MODERATE": 1, "HIGH": 2}
 @app.get("/health")
 async def health():
     return {"status": "awake"}
+
+
+@app.post("/track-event")
+async def track_event(event: str = Form(...), detail: str = Form("")):
+    """Logs any frontend user action to MLflow/DagsHub, visible alongside backend runs."""
+    if not _ensure_tracking():
+        return {"status": "tracking_disabled"}
+    try:
+        with mlflow.start_run(run_name=f"frontend_{event}_{datetime.utcnow().isoformat()}"):
+            mlflow.log_param("event_type", "frontend")
+            mlflow.log_param("event_name", event)
+            if detail:
+                mlflow.log_param("detail", detail)
+    except Exception as e:
+        print(f"Frontend event logging failed (non-fatal): {e}")
+    return {"status": "logged"}
 
 
 @app.get("/districts-weather")
