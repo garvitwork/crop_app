@@ -1,5 +1,6 @@
 [core]
     remote = origin
-[remote "origin"]
+    analytics = false
+['remote "origin"']
     url = s3://dvc
     endpointurl = https://dagshub.com/garvitwork/crop_app.s3
